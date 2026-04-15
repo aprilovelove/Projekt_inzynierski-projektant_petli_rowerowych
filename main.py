@@ -1,22 +1,22 @@
 import streamlit as st
 import osmnx as ox
-import networkx as nx
 import folium
 from streamlit_folium import st_folium
 import json
-import math
-from typing import List, Tuple
 from streamlit_js_eval import get_geolocation
 from datetime import datetime
-import qrcode
-from io import BytesIO
 
-# Importy z plików lokalnych
+# --- IMPORTY Z TWOJEJ STRUKTURY (KROK 1 & 2) ---
 from app.services.auth import login_user, register_user
-from app.db.database import SessionLocal, SavedRoute
+from app.db.database import SessionLocal, SavedRoute, User
+from app.utils.geo_utils import calculate_square_corners, create_gpx, generate_qr_image
+from app.services.route_service import (
+    find_circular_route,
+    clean_line_coordinates,
+    get_graph  # <--- Nasza nowa funkcja z Kroku 3
+)
 
 # --- KONFIGURACJA I SŁOWNIKI ---
-
 BIKE_PROFILES = {
     "Szosowy/miejski": {
         "good": ["asphalt", "concrete", "paved"],
@@ -36,17 +36,16 @@ BIKE_PROFILES = {
 }
 
 
-# --- LOGIKA ANALITYCZNA I POMOCNICZA ---
-
+# --- LOGIKA ANALITYCZNA ---
 def analyze_route_compatibility(G, route_nodes, bike_type):
     if not bike_type or bike_type == "Brak":
         return None, None
     edges = ox.routing.route_to_gdf(G, route_nodes)
     if 'surface' not in edges.columns:
-        return "Brak danych o nawierzchni w OpenStreetMaps", "gray"
+        return "Brak danych o nawierzchni w OSM", "gray"
     surfaces = edges['surface'].dropna().tolist()
     if not surfaces:
-        return "Brak danych o nawierzchni w OpenStreetMaps", "gray"
+        return "Brak danych o nawierzchni w OSM", "gray"
     score = 0
     profile = BIKE_PROFILES[bike_type]
     for s in surfaces:
@@ -64,161 +63,32 @@ def analyze_route_compatibility(G, route_nodes, bike_type):
         return "🔴 Trasa niedopasowana", "red"
 
 
-def create_gpx(geojson_data):
-    coords = geojson_data['features'][0]['geometry']['coordinates']
-    now = datetime.now().isoformat()
-    # Rozbudowany nagłówek GPX zgodny ze standardem 1.1 dla pełnej kompatybilności
-    gpx = '<?xml version="1.0" encoding="UTF-8"?>\n'
-    gpx += '<gpx version="1.1" creator="BikePlanner" xmlns="http://www.topografix.com/GPX/1/1">\n'
-    gpx += f'  <metadata><time>{now}</time></metadata>\n'
-    gpx += '  <trk>\n'
-    gpx += '    <name>Trasa Projektant</name>\n'
-    gpx += '    <trkseg>\n'
-    for lon, lat in coords:
-        gpx += f'      <trkpt lat="{lat}" lon="{lon}"></trkpt>\n'
-    gpx += '    </trkseg>\n'
-    gpx += '  </trk>\n'
-    gpx += '</gpx>'
-    return gpx
-
-
-def generate_qr_image(lat, lon):
-    # Wykorzystanie formatu geo: dla lepszej współpracy z mapami w telefonie
-    data = f"http://osmand.net/go?lat={lat}&lon={lon}&z=14"
-    qr = qrcode.QRCode(version=1, box_size=10, border=4)
-    qr.add_data(data)
-    qr.make(fit=True)
-    img = qr.make_image(fill_color="black", back_color="white")
-    buf = BytesIO()
-    img.save(buf, format="PNG")
-    return buf.getvalue()
-
-
-# --- LOGIKA GENERATORA ---
-
-def calculate_square_corners(start_lon: float, start_lat: float, side_length: float) -> List[Tuple[float, float]]:
-    R = 6371000
-    corners = []
-    current_lon, current_lat = start_lon, start_lat
-    bearings = [0, 90, 180, 270]
-    for bearing in bearings:
-        corners.append((current_lon, current_lat))
-        lat_rad, lon_rad = math.radians(current_lat), math.radians(current_lon)
-        bearing_rad = math.radians(bearing)
-        angular_distance = side_length / R
-        new_lat_rad = math.asin(math.sin(lat_rad) * math.cos(angular_distance) +
-                                math.cos(lat_rad) * math.sin(angular_distance) * math.cos(bearing_rad))
-        new_lon_rad = lon_rad + math.atan2(math.sin(bearing_rad) * math.sin(angular_distance) * math.cos(lat_rad),
-                                           math.cos(angular_distance) - math.sin(lat_rad) * math.sin(new_lat_rad))
-        current_lon, current_lat = math.degrees(new_lon_rad), math.degrees(new_lat_rad)
-    return corners
-
-
-def find_path_avoiding_edges(G, start_node, end_node, forbidden_edges):
-    temp_G = G.copy()
-    for u, v in list(temp_G.edges()):
-        if (u, v) in forbidden_edges or (v, u) in forbidden_edges:
-            temp_G.remove_edge(u, v)
-    try:
-        return nx.shortest_path(temp_G, start_node, end_node, weight='length')
-    except nx.NetworkXNoPath:
-        return nx.shortest_path(G, start_node, end_node, weight='length')
-
-
-def find_circular_route(G, corners):
-    corner_nodes = [ox.nearest_nodes(G, lon, lat) for lon, lat in corners]
-    route_segments = []
-    used_edges = set()
-    for i in range(len(corner_nodes)):
-        start, end = corner_nodes[i], corner_nodes[(i + 1) % len(corner_nodes)]
-        try:
-            segment = find_path_avoiding_edges(G, start, end, used_edges)
-            route_segments.extend(segment[:-1])
-            for u, v in zip(segment[:-1], segment[1:]):
-                used_edges.add((u, v))
-                used_edges.add((v, u))
-        except:
-            return []
-    if route_segments: route_segments.append(route_segments[0])
-    return route_segments
-
-
-def remove_backtracking(coordinates: List[List[float]]) -> List[List[float]]:
-    if len(coordinates) < 3: return coordinates
-    i, result = 0, []
-    while i < len(coordinates):
-        result.append(coordinates[i])
-        found_backtrack = False
-        for j in range(i + 2, min(i + 50, len(coordinates))):
-            if coordinates[i] == coordinates[j]:
-                i, found_backtrack = j, True
-                break
-        if not found_backtrack: i += 1
-    return result
-
-
-def clean_line_coordinates(coordinates: List[List[float]]) -> List[List[float]]:
-    if not coordinates: return []
-    cleaned = [coordinates[0]]
-    for i in range(1, len(coordinates)):
-        if coordinates[i] != coordinates[i - 1]: cleaned.append(coordinates[i])
-    return remove_backtracking(cleaned)
-
-
 # --- APLIKACJA STREAMLIT ---
-st.set_page_config(page_title="RoutePlanner", layout="wide")
+st.set_page_config(page_title="RoutePlanner Pro", layout="wide")
 
+# CSS - Stylizacja inżynierska
 st.markdown("""
     <style>
-        /* 1. Kolor tła Sidebara */
-        [data-testid="stSidebar"] {
-            background-color:#006600;
-            border-right: 2px solid  #cccc99 ; /* Zielone obramowanie z prawej */
-        }
-
-        /* 2. Główny kolor tła aplikacji */
-        .stApp {
-            background-color: #000000 Black;
-        }
-
-        /* 3. Stylizacja kontenerów (obramowania Twoich tras) */
+        [data-testid="stSidebar"] { background-color:#004d00; border-right: 2px solid #cccc99; }
+        .stApp { background-color: #0e1117; }
         div[data-testid="stVerticalBlockBorderWrapper"] {
-            border: 1px solid #e0e0e0;
-            border-radius: 10px;
-            padding: 10px;
-            background-color: #ffffff;
-        }
-
-        /* 4. Stylizacja kart w zakładkach (Community/Saved) */
-        .stElementContainer div[data-testid="stExpander"] {
-            border: 1px solid #ffcc00;
+            border: 1px solid #444; border-radius: 10px; padding: 15px; background-color: #1e2129;
         }
     </style>
 """, unsafe_allow_html=True)
 
 # INICJALIZACJA STANU SESJI
-if 'user' not in st.session_state: st.session_state.user = None
-if 'generated_geojson' not in st.session_state: st.session_state.generated_geojson = None
-if 'map_center' not in st.session_state: st.session_state.map_center = [50.2859, 18.9549]
-if 'load_info' not in st.session_state: st.session_state.load_info = None
-if 'route_score' not in st.session_state: st.session_state.route_score = (None, None)
-if 'loc_requested' not in st.session_state: st.session_state.loc_requested = False
+for key, default in [
+    ('user', None), ('generated_geojson', None), ('map_center', [50.2859, 18.9549]),
+    ('load_info', None), ('route_score', (None, None)), ('loc_requested', False)
+]:
+    if key not in st.session_state: st.session_state[key] = default
 
-# --- MECHANIZM AKTUALIZACJI WSPÓŁRZĘDNYCH ---
-if 'new_coords' in st.session_state:
-    st.session_state.lat_widget = st.session_state.new_coords[0]
-    st.session_state.lon_widget = st.session_state.new_coords[1]
-    st.session_state.map_center = st.session_state.new_coords
-    del st.session_state.new_coords
-
-if 'lat_widget' not in st.session_state: st.session_state.lat_widget = st.session_state.map_center[0]
-if 'lon_widget' not in st.session_state: st.session_state.lon_widget = st.session_state.map_center[1]
-
-# --- OBSŁUGA GPS W TLE ---
+# OBSŁUGA GPS
 if st.session_state.loc_requested:
     loc_data = get_geolocation()
     if loc_data:
-        st.session_state.new_coords = [loc_data['coords']['latitude'], loc_data['coords']['longitude']]
+        st.session_state.map_center = [loc_data['coords']['latitude'], loc_data['coords']['longitude']]
         st.session_state.loc_requested = False
         st.rerun()
 
@@ -227,89 +97,79 @@ def load_route_action(geojson_data, name):
     data = json.loads(geojson_data)
     st.session_state.generated_geojson = data
     st.session_state.load_info = name
-    first_coord = data['features'][0]['geometry']['coordinates'][0]
-    st.session_state.new_coords = [first_coord[1], first_coord[0]]
-
-
-def update_center():
-    st.session_state.map_center = [st.session_state.lat_widget, st.session_state.lon_widget]
+    first = data['features'][0]['geometry']['coordinates'][0]
+    st.session_state.map_center = [first[1], first[0]]
 
 
 # --- SIDEBAR ---
 with st.sidebar:
     if st.session_state.user is None:
-        st.header("🔑 Logowanie")
+        st.header("🔑 Panel Dostępu")
         choice = st.radio("Akcja", ["Logowanie", "Rejestracja"])
         u = st.text_input("Użytkownik")
         p = st.text_input("Hasło", type="password")
-        if choice == "Logowanie":
-            if st.button("Zaloguj"):
-                user = login_user(u, p)
-                if user:
-                    st.session_state.user = {"id": user.id, "name": user.username}
-                    st.rerun()
-                else:
-                    st.error("Błędne dane")
-        else:
-            if st.button("Zarejestruj"):
-                if register_user(u, p):
-                    st.success("Konto utworzone!")
-                else:
-                    st.error("Użytkownik już istnieje.")
+        if choice == "Logowanie" and st.button("Zaloguj"):
+            user = login_user(u, p)
+            if user:
+                st.session_state.user = {"id": user.id, "name": user.username}
+                st.rerun()
+            else:
+                st.error("Błąd logowania")
+        elif choice == "Rejestracja" and st.button("Zarejestruj"):
+            if register_user(u, p):
+                st.success("Konto utworzone!")
+            else:
+                st.error("Użytkownik istnieje.")
     else:
-        st.success(f"Zalogowany jako: {st.session_state.user['name']}")
+        st.success(f"Witaj, {st.session_state.user['name']}")
         if st.button("Wyloguj"):
             st.session_state.user = None
             st.rerun()
 
     st.divider()
     st.header("🪧 Parametry Trasy")
-    if st.button("Użyj mojej lokalizacji"):
+    if st.button("📍 Pobierz moją lokalizację"):
         st.session_state.loc_requested = True
         st.rerun()
 
-    st.number_input("Szerokość (Lat)", format="%.6f", key="lat_widget", on_change=update_center)
-    st.number_input("Długość (Lon)", format="%.6f", key="lon_widget", on_change=update_center)
-
-    dist_km = st.slider("Dystans (km)", 5, 30, 15)
-    bike_type = st.selectbox("Typ roweru(opcjonalne)",
-                             ["Brak", "Szosowy/miejski", "Gravel(hybrydowy)", "MTB(terenowy)"])
-    clean_option = st.checkbox("Wyczyść backtracking", value=True)
-    generate_btn = st.button("🚴‍♂️ Wygeneruj Trasę", type="primary")
+    lat = st.number_input("Szerokość (Lat)", value=st.session_state.map_center[0], format="%.6f")
+    lon = st.number_input("Długość (Lon)", value=st.session_state.map_center[1], format="%.6f")
+    dist_km = st.slider("Dystans pętli (km)", 5, 50, 15)
+    bike_type = st.selectbox("Typ roweru", ["Brak", "Szosowy/miejski", "Gravel(hybrydowy)", "MTB(terenowy)"])
+    clean_option = st.checkbox("Optymalizacja geometrii (Backtracking)", value=True)
+    generate_btn = st.button("🚴‍♂️ GENERUJ TRASĘ", type="primary")
 
 # --- INTERFEJS GŁÓWNY ---
-tab1, tab2, tab3 = st.tabs(["🚲 Projektant", "🌍 Społeczność", "📒 Zapisane Trasy"])
+tab1, tab2, tab3 = st.tabs(["🚲 Projektant", "🌍 Społeczność", "📒 Twoje Archiwum"])
 
 with tab1:
-    if st.session_state.load_info:
-        st.info(f"📍 **Aktywna trasa:** {st.session_state.load_info}")
-        if st.button("Wyczyść i zacznij od nowa"):
-            st.session_state.generated_geojson = None
-            st.session_state.load_info = None
-            st.rerun()
-
     if generate_btn:
-        with st.spinner("Trwa przygotowywanie trasy..."):
+        with st.spinner("KROK 3: Optymalizacja i pobieranie danych grafowych..."):
             try:
-                curr_lat = st.session_state.lat_widget
-                curr_lon = st.session_state.lon_widget
-
+                # 1. Obliczanie narożników kwadratu
                 side_m = (dist_km * 1000 * 0.65) / 4
-                corners = calculate_square_corners(curr_lon, curr_lat, side_m)
-                G = ox.graph_from_point((curr_lat, curr_lon), dist=side_m * 1.5, network_type="bike")
+                corners = calculate_square_corners(lon, lat, side_m)
+
+                # 2. KROK 3.1: Pobieranie grafu z CACHE (graphml) zamiast każdorazowego API
+                G = get_graph(lat, lon, dist=side_m * 1.5)
+
+                # 3. Szukanie trasy
                 route_nodes = find_circular_route(G, corners)
+
                 if route_nodes:
                     nodes_df, _ = ox.graph_to_gdfs(G)
                     raw_coords = [[nodes_df.loc[n].y, nodes_df.loc[n].x] for n in route_nodes]
+
                     if clean_option:
                         clean_input = [[c[1], c[0]] for c in raw_coords]
                         cleaned = clean_line_coordinates(clean_input)
                         display_coords = [[c[1], c[0]] for c in cleaned]
                     else:
                         display_coords = raw_coords
+
                     dist = ox.routing.route_to_gdf(G, route_nodes)['length'].sum() / 1000
                     st.session_state.route_score = analyze_route_compatibility(G, route_nodes, bike_type)
-                    st.session_state.load_info = f"Nowa trasa {round(dist, 1)} km"
+                    st.session_state.load_info = f"Trasa {round(dist, 1)} km"
                     st.session_state.generated_geojson = {
                         "type": "FeatureCollection",
                         "features": [{
@@ -318,123 +178,80 @@ with tab1:
                             "properties": {"length_km": round(dist, 2)}
                         }]
                     }
-                    st.session_state.map_center = [curr_lat, curr_lon]
+                    st.session_state.map_center = [lat, lon]
                     st.rerun()
                 else:
-                    st.error("Nie znaleziono pętli.")
+                    st.error("Nie znaleziono bezpiecznej pętli w tym rejonie.")
             except Exception as e:
-                st.error(f"Błąd: {e}")
+                st.error(f"Błąd silnika trasowania: {e}")
 
     if st.session_state.generated_geojson:
         data = st.session_state.generated_geojson
         dist = data['features'][0]['properties']['length_km']
 
-        start_point = [data['features'][0]['geometry']['coordinates'][0][1],
-                       data['features'][0]['geometry']['coordinates'][0][0]]
-
         c1, c2 = st.columns([1, 2])
-        c1.metric("Długość", f"{dist} km")
+        c1.metric("Szacowany dystans", f"{dist} km")
         status, color = st.session_state.route_score
-        if status: c2.markdown(f"**Status dopasowania do roweru:** :{color}[{status}]")
+        if status: c2.markdown(f"**Nawierzchnia:** :{color}[{status}]")
 
         m = folium.Map(location=st.session_state.map_center, zoom_start=13)
         folium.GeoJson(data, style_function=lambda x: {'color': '#2ecc71', 'weight': 5}).add_to(m)
-        folium.Marker(start_point, popup="Start/Meta", icon=folium.Icon(color='red')).add_to(m)
-        st_folium(m, width=1200, height=550, key="active_gen_map")
+        folium.Marker([data['features'][0]['geometry']['coordinates'][0][1],
+                       data['features'][0]['geometry']['coordinates'][0][0]],
+                      popup="Start/Meta", icon=folium.Icon(color='red')).add_to(m)
+        st_folium(m, width=1200, height=500, key="active_map")
 
-        # --- POPRAWIONA SEKCJA WYŚWIETLANIA I EKSPORTU ---
+        # EKSPORT
         st.divider()
-        st.subheader("📲 Wyślij trasę na telefon")
-        col_down1, col_down2, col_down3 = st.columns([1, 1, 1])
-
-        # Dynamiczne generowanie zasobów na podstawie aktualnej sesji
-        active_geojson = st.session_state.generated_geojson
-        current_gpx = create_gpx(active_geojson)
-
-        current_start_lon = active_geojson['features'][0]['geometry']['coordinates'][0][0]
-        current_start_lat = active_geojson['features'][0]['geometry']['coordinates'][0][1]
-        current_qr_img = generate_qr_image(current_start_lat, current_start_lon)
-
-        # Użycie znacznika czasu jako klucza wymuszającego odświeżenie widgetu pobierania
-        ts = datetime.now().strftime("%H%M%S")
-
-        with col_down1:
-            st.download_button(
-                label="🗺️ POBIERZ PLIK GPX",
-                data=current_gpx,
-                file_name=f"trasa_{ts}.gpx",
-                mime="application/gpx+xml",
-                use_container_width=True,
-                key=f"dl_btn_{ts}"
-            )
-            st.caption("Pobierz i otwórz w OsmAnd")
-
-        with col_down2:
-            st.image(current_qr_img, width=150)
-            st.caption("Skanuj kod, by ustawić punkt startowy w OsmAnd.")
-
-        with col_down3:
+        col_ex1, col_ex2, col_ex3 = st.columns([1, 1, 1])
+        with col_ex1:
+            st.download_button("💾 Pobierz GPX", create_gpx(data), f"trasa_{dist}km.gpx", "application/gpx+xml")
+        with col_ex2:
+            st.image(generate_qr_image(st.session_state.map_center[0], st.session_state.map_center[1]), width=120)
+            st.caption("QR Start (OsmAnd)")
+        with col_ex3:
             if st.session_state.user:
-                with st.popover("💾 Zapisz w profilu", use_container_width=True):
-                    r_name = st.text_input("Nazwa trasy", "Moja Trasa")
-                    r_vis = st.selectbox("Widoczność", ["public", "private"])
-                    if st.button("Potwierdź Zapis"):
-                        db = SessionLocal()
-                        new_r = SavedRoute(user_id=st.session_state.user['id'], name=r_name,
-                                           geojson_data=json.dumps(data), visibility=r_vis)
-                        db.add(new_r)
-                        db.commit()
-                        db.close()
-                        st.success("Zapisano!")
+                r_name = st.text_input("Nazwa zapisu", f"Trasa {dist}km")
+                if st.button("Zapisz w profilu"):
+                    db = SessionLocal()
+                    new_r = SavedRoute(user_id=st.session_state.user['id'], name=r_name,
+                                       geojson_data=json.dumps(data), visibility="public")
+                    db.add(new_r)
+                    db.commit()
+                    db.close()
+                    st.success("Zapisano!")
             else:
-                st.button("💾 Zaloguj się by zapisać", disabled=True, use_container_width=True)
-
+                st.info("Zaloguj się, aby zapisać.")
     else:
-        st.info("Ustaw parametry i naciśnij 'Wygeneruj Trasę', by uzyskać podgląd w projektancie...")
-        m_preview = folium.Map(location=st.session_state.map_center, zoom_start=13)
-        folium.Marker(st.session_state.map_center, icon=folium.Icon(color='blue')).add_to(m_preview)
-        st_folium(m_preview, width=1200, height=550, key="preview_map")
+        st.info("Oczekiwanie na parametry trasy...")
+        m_pre = folium.Map(location=st.session_state.map_center, zoom_start=12)
+        st_folium(m_pre, width=1200, height=500, key="pre_map")
 
-# --- POZOSTAŁE ZAKŁADKI ---
+# --- ZAKŁADKI SPOŁECZNOŚCI ---
 with tab2:
-    st.header("🌍 Trasy dodane przez społeczność")
     db = SessionLocal()
     routes = db.query(SavedRoute).filter_by(visibility='public').all()
     for r in routes:
         with st.container(border=True):
-            c1, c2 = st.columns([3, 1])
-            try:
-                r_data = json.loads(r.geojson_data)
-                r_dist = r_data['features'][0]['properties'].get('length_km', '??')
-            except:
-                r_dist = "??"
-            c1.write(f"**{r.name}** ({r_dist} km) | Autor: {r.owner.username}")
-            if c2.button("↗️ Wczytaj", key=f"pub_{r.id}"):
+            col_a, col_b = st.columns([4, 1])
+            col_a.write(f"📌 **{r.name}** | Autor: {r.owner.username}")
+            if col_b.button("Wczytaj", key=f"load_{r.id}"):
                 load_route_action(r.geojson_data, r.name)
                 st.rerun()
     db.close()
 
 with tab3:
     if st.session_state.user:
-        st.header("🎴 Twoje Trasy")
         db = SessionLocal()
         my_routes = db.query(SavedRoute).filter_by(user_id=st.session_state.user['id']).all()
         for r in my_routes:
             with st.container(border=True):
-                c1, c2, c3 = st.columns([2, 1, 1])
-                try:
-                    r_data = json.loads(r.geojson_data)
-                    r_dist = r_data['features'][0]['properties'].get('length_km', '??')
-                except:
-                    r_dist = "??"
-                c1.write(f"**{r.name}** ({r_dist} km) [{r.visibility}]")
-                if c2.button("↗️ Wczytaj", key=f"my_{r.id}"):
-                    load_route_action(r.geojson_data, r.name)
-                    st.rerun()
-                if c3.button("🗑️ Usuń", key=f"del_{r.id}"):
+                col_x, col_y = st.columns([4, 1])
+                col_x.write(f"🗺️ {r.name}")
+                if col_y.button("Usuń", key=f"del_{r.id}"):
                     db.delete(r)
                     db.commit()
                     st.rerun()
         db.close()
     else:
-        st.warning("Zaloguj się, by uzyskać podgląd.")
+        st.warning("Zaloguj się, aby zobaczyć swoje trasy.")
