@@ -36,8 +36,6 @@ class SavedRoute(Base):
     visibility = Column(String, default='private') # 'private' lub 'public'
     owner = relationship("User", back_populates="routes")
 
-engine = create_engine('sqlite:///bike_app.db', connect_args={"check_same_thread": False})
-Base.metadata.create_all(engine)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 def get_db():
