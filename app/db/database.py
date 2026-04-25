@@ -24,7 +24,9 @@ class User(Base):
     __tablename__ = 'users'
     id = Column(Integer, primary_key=True)
     username = Column(String, unique=True, nullable=False)
+    email = Column(String, unique=True, nullable=False)  # NOWOŚĆ
     password = Column(String, nullable=False)
+    reset_code = Column(String, nullable=True)          # NOWOŚĆ (na potrzeby resetu)
     routes = relationship("SavedRoute", back_populates="owner")
 
 class SavedRoute(Base):

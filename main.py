@@ -150,30 +150,57 @@ def update_center():
     st.session_state.map_center = [st.session_state.lat_widget, st.session_state.lon_widget]
 
 
-# --- SIDEBAR ---
+# --- SIDEBAR: Autoryzacja ---
 with st.sidebar:
     if st.session_state.user is None:
-        st.header("🔑 Logowanie")
+        st.header("🔑 Panel Użytkownika")
         choice = st.radio("Akcja", ["Logowanie", "Rejestracja"])
-        u = st.text_input("Użytkownik")
-        p = st.text_input("Hasło", type="password")
+
         if choice == "Logowanie":
+            e = st.text_input("E-mail/Nick")
+            p = st.text_input("Hasło", type="password")
             if st.button("Zaloguj"):
-                user = login_user(u, p)
+                user = login_user(e, p)  # Logujemy mailem
                 if user:
                     st.session_state.user = {"id": user.id, "name": user.username}
                     st.rerun()
                 else:
-                    st.error("Błędne dane")
-        else:
+                    st.error("Błędny e-mail/nick lub hasło")
+
+            # --- RESET HASŁA (UPROSZCZONY) ---
+            with st.expander("Zapomniałeś hasła?"):
+                reset_email = st.text_input("Wpisz e-mail do resetu", key="res_em")
+                if st.button("Wyślij kod"):
+                    from app.services.auth import initiate_password_reset
+                    from app.services.email_service import send_custom_email
+
+                    code = initiate_password_reset(reset_email)
+                    if code:
+                        send_custom_email(reset_email, "Kod resetu hasła", f"Twój kod to: {code}")
+                        st.info("Jeśli e-mail istnieje, kod został wysłany.")
+                    else:
+                        st.error("Nie znaleziono takiego adresu.")
+
+        else:  # REJESTRACJA
+            new_u = st.text_input("Twoje Imię/Nick")
+            new_e = st.text_input("E-mail")
+            new_p = st.text_input("Hasło", type="password")
             if st.button("Zarejestruj"):
-                if register_user(u, p):
-                    st.success("Konto utworzone!")
-                else:
-                    st.error("Użytkownik już istnieje.")
+                from app.services.auth import register_user
+
+                res = register_user(new_u, new_e, new_p)
+                if res == "success":
+                    st.success("Konto utworzone! Możesz się zalogować.")
+                elif res == "invalid_email":
+                    st.error("Niepoprawny format e-maila!")
+                elif res == "exists":
+                    st.error("Użytkownik lub e-mail już istnieje.")
     else:
-        st.success(f"Zalogowany jako: {st.session_state.user['name']}")
-        if st.button("Wyloguj"):
+        st.header("👤 Twój Profil")
+        st.success(f"Zalogowany jako: **{st.session_state.user['name']}**")
+
+        # Przycisk wylogowania, który przywróci widoczność formularzy
+        if st.button("🚪 Wyloguj się", use_container_width=True):
             st.session_state.user = None
             st.rerun()
 
@@ -284,6 +311,32 @@ with tab1:
                 key=f"dl_btn_{ts}"
             )
             st.caption("Pobierz i otwórz w OsmAnd")
+
+            # NOWOŚĆ: Przycisk wysyłki na e-mail
+            if st.button("📧 WYŚLIJ NA MÓJ E-MAIL", use_container_width=True):
+                if st.session_state.user:
+                    from app.services.email_service import send_custom_email
+                    from app.db.database import SessionLocal, User
+
+                    # Pobieramy maila z bazy dla aktualnie zalogowanego ID
+                    db = SessionLocal()
+                    curr_user = db.query(User).get(st.session_state.user['id'])
+                    db.close()
+
+                    with st.spinner("Wysyłanie..."):
+                        success = send_custom_email(
+                            recipient_email=curr_user.email,
+                            subject=f"Twoja trasa: {st.session_state.load_info}",
+                            body="Cześć! W załączniku przesyłamy wygenerowaną trasę rowerową GPX. Powodzenia!",
+                            attachment_data=current_gpx,
+                            attachment_name=f"trasa_{ts}.gpx"
+                        )
+                        if success:
+                            st.toast("E-mail został wysłany! Sprawdź skrzynkę.")
+                        else:
+                            st.error("Błąd serwera e-mail.")
+                else:
+                    st.warning("Zaloguj się, aby wysłać trasę na e-mail.")
 
         with col_down2:
             st.image(current_qr_img, width=150)
