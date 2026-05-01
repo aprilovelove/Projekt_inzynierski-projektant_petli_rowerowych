@@ -28,67 +28,38 @@ from app.services.route_service import find_circular_route, clean_line_coordinat
 from app.services.auth import login_user, register_user
 from app.db.database import SessionLocal, SavedRoute, User
 from app.services.route_service import get_graph
+from app.services.route_analysis_service import analyze_route_compatibility
 
 from app.db.database import engine, Base
 Base.metadata.create_all(bind=engine)
-# --- KONFIGURACJA I SŁOWNIKI ---
 
-BIKE_PROFILES = {
-    "Szosowy/miejski": {
-        "good": ["asphalt", "concrete", "paved"],
-        "neutral": ["sett", "unpaved"],
-        "bad": ["gravel", "cobblestone", "dirt", "sand", "grass", "ground"]
-    },
-    "Gravel(hybrydowy)": {
-        "good": ["asphalt", "gravel", "unpaved", "dirt", "compacted"],
-        "neutral": ["concrete", "sett", "cobblestone"],
-        "bad": ["sand", "grass"]
-    },
-    "MTB(terenowy)": {
-        "good": ["gravel", "dirt", "sand", "grass", "ground", "cobblestone", "unpaved"],
-        "neutral": ["asphalt", "concrete", "sett"],
-        "bad": []
-    }
-}
-
-
-# --- LOGIKA ANALITYCZNA I POMOCNICZA ---
-
-def analyze_route_compatibility(G, route_nodes, bike_type):
-    if not bike_type or bike_type == "Brak":
-        return None, None
-    edges = ox.routing.route_to_gdf(G, route_nodes)
-    if 'surface' not in edges.columns:
-        return "Brak danych o nawierzchni w OpenStreetMaps", "gray"
-    surfaces = edges['surface'].dropna().tolist()
-    if not surfaces:
-        return "Brak danych o nawierzchni w OpenStreetMaps", "gray"
-    score = 0
-    profile = BIKE_PROFILES[bike_type]
-    for s in surfaces:
-        s_val = s[0] if isinstance(s, list) else s
-        if s_val in profile["good"]:
-            score += 1
-        elif s_val in profile["neutral"]:
-            score += 0.5
-    ratio = score / len(surfaces)
-    if ratio > 0.8:
-        return "🟢 Trasa idealnie dopasowana", "green"
-    elif ratio > 0.4:
-        return "🟡 Trasa średnio dopasowana", "orange"
-    else:
-        return "🔴 Trasa niedopasowana", "red"
 
 
 # --- APLIKACJA STREAMLIT ---
-st.set_page_config(page_title="RoutePlanner", layout="wide")
+st.set_page_config(
+    page_title="RoutePlanner",
+    layout="wide",
+    initial_sidebar_state="expanded",
+    menu_items={
+        'Get Help': None,
+        'Report a bug': None,
+        'About': None
+    }
+)
 
 st.markdown("""
     <style>
+        /* Ukrycie paska narzędzi Streamlit */
+        #MainMenu {visibility: hidden;}
+        header {visibility: hidden;}
+        footer {visibility: hidden;}
+        .stAppDeployButton {display:none;}
+        div[data-testid="stStatusWidget"] {visibility: hidden;}
+
         /* 1. Kolor tła Sidebara */
         [data-testid="stSidebar"] {
             background-color:#006600;
-            border-right: 2px solid  #cccc99 ; /* Zielone obramowanie z prawej */
+            border-right: 2px solid  #cccc99 ;
         }
 
         /* 2. Główny kolor tła aplikacji */
@@ -96,7 +67,7 @@ st.markdown("""
             background-color: #000000;
         }
 
-        /* 3. Stylizacja kontenerów (obramowania Twoich tras) */
+        /* 3. Stylizacja kontenerów */
         div[data-testid="stVerticalBlockBorderWrapper"] {
             border: 1px solid #e0e0e0;
             border-radius: 10px;
@@ -104,7 +75,7 @@ st.markdown("""
             background-color: #ffffff;
         }
 
-        /* 4. Stylizacja kart w zakładkach (Community/Saved) */
+        /* 4. Stylizacja kart w zakładkach */
         .stElementContainer div[data-testid="stExpander"] {
             border: 1px solid #ffcc00;
         }
@@ -216,7 +187,6 @@ with st.sidebar:
     dist_km = st.slider("Dystans (km)", 5, 30, 15)
     bike_type = st.selectbox("Typ roweru(opcjonalne)",
                              ["Brak", "Szosowy/miejski", "Gravel(hybrydowy)", "MTB(terenowy)"])
-    clean_option = st.checkbox("Wyczyść backtracking", value=True)
     generate_btn = st.button("🚴‍♂️ Wygeneruj Trasę", type="primary")
 
 # --- INTERFEJS GŁÓWNY ---
@@ -245,13 +215,12 @@ with tab1:
                 route_nodes = find_circular_route(G, corners)
                 if route_nodes:
                     nodes_df, _ = ox.graph_to_gdfs(G)
+
                     raw_coords = [[nodes_df.loc[n].y, nodes_df.loc[n].x] for n in route_nodes]
-                    if clean_option:
-                        clean_input = [[c[1], c[0]] for c in raw_coords]
-                        cleaned = clean_line_coordinates(clean_input)
-                        display_coords = [[c[1], c[0]] for c in cleaned]
-                    else:
-                        display_coords = raw_coords
+                    clean_input = [[c[1], c[0]] for c in raw_coords]
+                    cleaned = clean_line_coordinates(clean_input)
+
+                    display_coords = [[c[1], c[0]] for c in cleaned]
                     dist = ox.routing.route_to_gdf(G, route_nodes)['length'].sum() / 1000
                     st.session_state.route_score = analyze_route_compatibility(G, route_nodes, bike_type)
                     st.session_state.load_info = f"Nowa trasa {round(dist, 1)} km"
@@ -277,10 +246,39 @@ with tab1:
         start_point = [data['features'][0]['geometry']['coordinates'][0][1],
                        data['features'][0]['geometry']['coordinates'][0][0]]
 
-        c1, c2 = st.columns([1, 2])
+        # --- ZMODYFIKOWANY NAGŁÓWEK WYNIKÓW ---
+        # Dodajemy trzecią, bardzo wąską kolumnę na przycisk pomocy
+        c1, c2, c3 = st.columns([1, 2, 0.4])
+
         c1.metric("Długość", f"{dist} km")
+
         status, color = st.session_state.route_score
-        if status: c2.markdown(f"**Status dopasowania do roweru:** :{color}[{status}]")
+        if status:
+            c2.markdown(f"**Status dopasowania do roweru:**\n\n:{color}[{status}]")
+
+            # --- TWOJA NOWA SEKCJA POMOCY (POPOVER) ---
+            with c3:
+                with st.popover("❓", help="Dowiedz się, jak liczymy dopasowanie"):
+                    st.markdown("### 🧠 Jak działa nasza analiza?")
+                    st.write("""
+                            Każdy segment trasy oceniamy w skali **0-10** na podstawie danych z OpenStreetMap (OSM):
+                        """)
+
+                    st.info("""
+                            - **0-2 (Asfalt):** Drogi publiczne, ścieżki rowerowe.
+                            - **3-6 (Gravel):** Drogi utwardzone, szuter, drobny kamień.
+                            - **7-10 (Teren):** Piach, trawa, korzenie, drogi leśne.
+                        """)
+
+                    st.write("**Co bierzemy pod uwagę?**")
+                    st.markdown("""
+                            1. **Nawierzchnia (`surface`):** Bezpośrednia informacja o materiale.
+                            2. **Typ drogi (`highway`):** Heurystyka (np. 'residential' to zazwyczaj asfalt).
+                            3. **Klasa drogi (`tracktype`):** Stopień utwardzenia dróg polnych/leśnych.
+                        """)
+
+                    st.caption(
+                        "Ocena końcowa to średnia ważona trudności z całej trasy porównana z limitem dla Twojego roweru.")
 
         m = folium.Map(location=st.session_state.map_center, zoom_start=13)
         folium.GeoJson(data, style_function=lambda x: {'color': '#2ecc71', 'weight': 5}).add_to(m)
@@ -297,7 +295,7 @@ with tab1:
 
         current_start_lon = active_geojson['features'][0]['geometry']['coordinates'][0][0]
         current_start_lat = active_geojson['features'][0]['geometry']['coordinates'][0][1]
-        current_qr_img = generate_qr_image(current_start_lat, current_start_lon)
+
 
         ts = datetime.now().strftime("%H%M%S")
 
@@ -310,7 +308,7 @@ with tab1:
                 use_container_width=True,
                 key=f"dl_btn_{ts}"
             )
-            st.caption("Pobierz i otwórz w OsmAnd")
+
 
             # NOWOŚĆ: Przycisk wysyłki na e-mail
             if st.button("📧 WYŚLIJ NA MÓJ E-MAIL", use_container_width=True):
@@ -338,9 +336,7 @@ with tab1:
                 else:
                     st.warning("Zaloguj się, aby wysłać trasę na e-mail.")
 
-        with col_down2:
-            st.image(current_qr_img, width=150)
-            st.caption("Skanuj kod, by ustawić punkt startowy w OsmAnd.")
+
 
         with col_down3:
             if st.session_state.user:
