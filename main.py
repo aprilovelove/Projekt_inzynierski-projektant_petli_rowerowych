@@ -303,32 +303,39 @@ with tab1:
                 key=f"dl_btn_{ts}"
             )
 
-
-            # NOWOŚĆ: Przycisk wysyłki na e-mail
             if st.button("📧 WYŚLIJ NA MÓJ E-MAIL", use_container_width=True):
                 if st.session_state.user:
-                    from app.services.email_service import send_custom_email
                     from app.db.database import SessionLocal, User
+                    from app.services.email_service import send_custom_email
 
-                    # Pobieramy maila z bazy dla aktualnie zalogowanego ID
+                    # Otwieramy nową sesję
                     db = SessionLocal()
-                    curr_user = db.query(User).get(st.session_state.user['id'])
-                    db.close()
+                    try:
+                        # Używamy db.get zamiast db.query().get() - zgodnie z logami
+                        curr_user = db.get(User, st.session_state.user['id'])
+                        target_email = curr_user.email if curr_user else None
+                    except Exception as e:
+                        st.error(f"Błąd bazy danych: {e}")
+                        target_email = None
+                    finally:
+                        db.close()  # Zamykamy od razu po pobraniu maila
 
-                    with st.spinner("Wysyłanie..."):
-                        success = send_custom_email(
-                            recipient_email=curr_user.email,
-                            subject=f"Twoja trasa: {st.session_state.load_info}",
-                            body="Cześć! W załączniku przesyłamy wygenerowaną trasę rowerową GPX. Powodzenia!",
-                            attachment_data=current_gpx,
-                            attachment_name=f"trasa_{ts}.gpx"
-                        )
-                        if success:
-                            st.toast("E-mail został wysłany! Sprawdź skrzynkę.")
-                        else:
-                            st.error("Błąd serwera e-mail.")
-                else:
-                    st.warning("Zaloguj się, aby wysłać trasę na e-mail.")
+                    if target_email:
+                        with st.spinner("Wysyłanie..."):
+                            # Tutaj wywołujesz send_custom_email tak jak wcześniej
+                            success = send_custom_email(
+                                recipient_email=target_email.strip(),
+                                subject="Twoja trasa GPX",
+                                body="Cześć! W załączniku przesyłamy trasę.",
+                                attachment_data=current_gpx,
+                                attachment_name=f"trasa_{ts}.gpx"
+                            )
+                            if success:
+                                st.toast("E-mail został wysłany!")
+                            else:
+                                st.error("Błąd serwera e-mail. Sprawdź Hasło Aplikacji w Secrets.")
+                    else:
+                        st.error("Nie znaleziono adresu e-mail w bazie.")
 
 
 

@@ -34,7 +34,12 @@ if SQLALCHEMY_DATABASE_URL.startswith("postgres://"):
     SQLALCHEMY_DATABASE_URL = SQLALCHEMY_DATABASE_URL.replace("postgres://", "postgresql://", 1)
 
 # 3. POŁĄCZENIE
-engine = create_engine(SQLALCHEMY_DATABASE_URL)
+# Dodajemy pool_pre_ping=True oraz connect_args dla stabilności SSL
+engine = create_engine(
+    SQLALCHEMY_DATABASE_URL,
+    pool_pre_ping=True,
+    connect_args={"sslmode": "require"}
+)
 Base = declarative_base()
 
 # --- MODELE (bez zmian) ---
