@@ -12,12 +12,6 @@ import qrcode
 from io import BytesIO
 from app.db.database import engine, Base, User, SavedRoute
 
-# Ta linia to "magiczny przycisk", który tworzy tabele
-try:
-    Base.metadata.create_all(bind=engine)
-    st.sidebar.success("Połączono z bazą danych!")
-except Exception as e:
-    st.sidebar.error(f"Błąd tworzenia tabel: {e}")
 # Importy z plików lokalnych
 from app.services.auth import login_user, register_user
 from app.db.database import SessionLocal, SavedRoute
