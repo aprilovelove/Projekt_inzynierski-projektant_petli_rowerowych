@@ -23,6 +23,7 @@ from app.services.auth import login_user, register_user
 from app.db.database import SessionLocal, SavedRoute, User
 from app.services.route_service import get_graph
 from app.services.route_analysis_service import analyze_route_compatibility
+from app.services.manual_designer import show_manual_designer
 
 from app.db.database import engine, Base
 Base.metadata.create_all(bind=engine)
@@ -183,8 +184,8 @@ with st.sidebar:
                              ["Brak", "Szosowy/miejski", "Gravel(hybrydowy)", "MTB(terenowy)"])
     generate_btn = st.button("🚴‍♂️ Wygeneruj Trasę", type="primary")
 
-# --- INTERFEJS GŁÓWNY ---
-tab1, tab2, tab3 = st.tabs(["🚲 Projektant", "🌍 Społeczność", "📒 Zapisane Trasy"])
+tab1, tab2, tab3, tab4 = st.tabs(
+    ["🚲 Projektant automatyczny", "Projektant ręczny", "🌍 Społeczność", "📒 Zapisane Trasy"])
 
 with tab1:
     if st.session_state.load_info:
@@ -192,6 +193,7 @@ with tab1:
         if st.button("Wyczyść i zacznij od nowa"):
             st.session_state.generated_geojson = None
             st.session_state.load_info = None
+            st.session_state.auto_coords = None  # Czyścimy widmo
             st.rerun()
 
     if generate_btn:
@@ -203,8 +205,8 @@ with tab1:
                 side_m = (dist_km * 1000 * 0.65) / 4
                 corners = calculate_square_corners(curr_lon, curr_lat, side_m)
 
-                # ZMIANA KROK 3.1: Użycie get_graph z buforowaniem lokalnym
                 G = get_graph(curr_lat, curr_lon, dist=side_m * 1.5, network_type="bike")
+                st.session_state.G = G  # Zapisujemy graf do sesji dla obu zakładek
 
                 route_nodes = find_circular_route(G, corners)
                 if route_nodes:
@@ -215,6 +217,10 @@ with tab1:
                     cleaned = clean_line_coordinates(clean_input)
 
                     display_coords = [[c[1], c[0]] for c in cleaned]
+
+                    # --- Zapisujemy widmo dla zakładki ręcznej ---
+                    st.session_state.auto_coords = display_coords
+
                     dist = ox.routing.route_to_gdf(G, route_nodes)['length'].sum() / 1000
                     st.session_state.route_score = analyze_route_compatibility(G, route_nodes, bike_type)
                     st.session_state.load_info = f"Nowa trasa {round(dist, 1)} km"
@@ -236,61 +242,36 @@ with tab1:
     if st.session_state.generated_geojson:
         data = st.session_state.generated_geojson
         dist = data['features'][0]['properties']['length_km']
-
         start_point = [data['features'][0]['geometry']['coordinates'][0][1],
                        data['features'][0]['geometry']['coordinates'][0][0]]
 
-        # --- ZMODYFIKOWANY NAGŁÓWEK WYNIKÓW ---
-        # Dodajemy trzecią, bardzo wąską kolumnę na przycisk pomocy
         c1, c2, c3 = st.columns([1, 2, 0.4])
-
         c1.metric("Długość", f"{dist} km")
 
         status, color = st.session_state.route_score
         if status:
             c2.markdown(f"**Status dopasowania do roweru:**\n\n:{color}[{status}]")
-
-            # --- TWOJA NOWA SEKCJA POMOCY (POPOVER) ---
             with c3:
                 with st.popover("❓", help="Dowiedz się, jak liczymy dopasowanie"):
                     st.markdown("### 🧠 Jak działa nasza analiza?")
-                    st.write("""
-                            Każdy segment trasy oceniamy w skali **0-10** na podstawie danych z OpenStreetMap (OSM):
-                        """)
-
                     st.info("""
                             - **0-2 (Asfalt):** Drogi publiczne, ścieżki rowerowe.
                             - **3-6 (Gravel):** Drogi utwardzone, szuter, drobny kamień.
                             - **7-10 (Teren):** Piach, trawa, korzenie, drogi leśne.
                         """)
-
-                    st.write("**Co bierzemy pod uwagę?**")
-                    st.markdown("""
-                            1. **Nawierzchnia (`surface`):** Bezpośrednia informacja o materiale.
-                            2. **Typ drogi (`highway`):** Heurystyka (np. 'residential' to zazwyczaj asfalt).
-                            3. **Klasa drogi (`tracktype`):** Stopień utwardzenia dróg polnych/leśnych.
-                        """)
-
-                    st.caption(
-                        "Ocena końcowa to średnia ważona trudności z całej trasy porównana z limitem dla Twojego roweru.")
+                    st.caption("Ocena końcowa to średnia ważona trudności z całej trasy.")
 
         m = folium.Map(location=st.session_state.map_center, zoom_start=13)
         folium.GeoJson(data, style_function=lambda x: {'color': '#2ecc71', 'weight': 5}).add_to(m)
         folium.Marker(start_point, popup="Start/Meta", icon=folium.Icon(color='red')).add_to(m)
         st_folium(m, width=1200, height=550, key="active_gen_map")
 
-        # --- SEKCJA EKSPORTU ---
         st.divider()
         st.subheader("📲 Wyślij trasę na telefon")
         col_down1, col_down2, col_down3 = st.columns([1, 1, 1])
 
         active_geojson = st.session_state.generated_geojson
         current_gpx = create_gpx(active_geojson)
-
-        current_start_lon = active_geojson['features'][0]['geometry']['coordinates'][0][0]
-        current_start_lat = active_geojson['features'][0]['geometry']['coordinates'][0][1]
-
-
         ts = datetime.now().strftime("%H%M%S")
 
         with col_down1:
@@ -308,21 +289,18 @@ with tab1:
                     from app.db.database import SessionLocal, User
                     from app.services.email_service import send_custom_email
 
-                    # Otwieramy nową sesję
                     db = SessionLocal()
                     try:
-                        # Używamy db.get zamiast db.query().get() - zgodnie z logami
                         curr_user = db.get(User, st.session_state.user['id'])
                         target_email = curr_user.email if curr_user else None
                     except Exception as e:
                         st.error(f"Błąd bazy danych: {e}")
                         target_email = None
                     finally:
-                        db.close()  # Zamykamy od razu po pobraniu maila
+                        db.close()
 
                     if target_email:
                         with st.spinner("Wysyłanie..."):
-                            # Tutaj wywołujesz send_custom_email tak jak wcześniej
                             success = send_custom_email(
                                 recipient_email=target_email.strip(),
                                 subject="Twoja trasa GPX",
@@ -333,11 +311,9 @@ with tab1:
                             if success:
                                 st.toast("E-mail został wysłany!")
                             else:
-                                st.error("Błąd serwera e-mail. Sprawdź Hasło Aplikacji w Secrets.")
+                                st.error("Błąd serwera e-mail.")
                     else:
-                        st.error("Nie znaleziono adresu e-mail w bazie.")
-
-
+                        st.error("Nie znaleziono adresu e-mail.")
 
         with col_down3:
             if st.session_state.user:
@@ -356,13 +332,22 @@ with tab1:
                 st.button("💾 Zaloguj się by zapisać", disabled=True, use_container_width=True)
 
     else:
-        st.info("Ustaw parametry i naciśnij 'Wygeneruj Trasę', by uzyskać podgląd w projektancie...")
+        st.info("Ustaw parametry i naciśnij 'Wygeneruj Trasę', by uzyskać podgląd...")
         m_preview = folium.Map(location=st.session_state.map_center, zoom_start=13)
-        folium.Marker(st.session_state.map_center, icon=folium.Icon(color='blue')).add_to(m_preview)
+        # Przywrócenie pinezki lokalizacji przed wygenerowaniem trasy
+        folium.Marker(
+            st.session_state.map_center,
+            popup="Twoja lokalizacja",
+            icon=folium.Icon(color='blue', icon='info-sign')
+        ).add_to(m_preview)
         st_folium(m_preview, width=1200, height=550, key="preview_map")
 
-# --- POZOSTAŁE ZAKŁADKI ---
 with tab2:
+    from app.services.manual_designer import show_manual_designer
+
+    show_manual_designer()
+
+with tab3:
     st.header("🌍 Trasy dodane przez społeczność")
     db = SessionLocal()
     routes = db.query(SavedRoute).filter_by(visibility='public').all()
@@ -377,10 +362,12 @@ with tab2:
             c1.write(f"**{r.name}** ({r_dist} km) | Autor: {r.owner.username}")
             if c2.button("↗️ Wczytaj", key=f"pub_{r.id}"):
                 load_route_action(r.geojson_data, r.name)
+                # Przy wczytywaniu ze społeczności też ustawiamy widmo
+                st.session_state.auto_coords = [[c[1], c[0]] for c in r_data['features'][0]['geometry']['coordinates']]
                 st.rerun()
     db.close()
 
-with tab3:
+with tab4:
     if st.session_state.user:
         st.header("🎴 Twoje Trasy")
         db = SessionLocal()
@@ -396,6 +383,8 @@ with tab3:
                 c1.write(f"**{r.name}** ({r_dist} km) [{r.visibility}]")
                 if c2.button("↗️ Wczytaj", key=f"my_{r.id}"):
                     load_route_action(r.geojson_data, r.name)
+                    st.session_state.auto_coords = [[c[1], c[0]] for c in
+                                                    r_data['features'][0]['geometry']['coordinates']]
                     st.rerun()
                 if c3.button("🗑️ Usuń", key=f"del_{r.id}"):
                     db.delete(r)
@@ -404,4 +393,3 @@ with tab3:
         db.close()
     else:
         st.warning("Zaloguj się, by uzyskać podgląd.")
-
