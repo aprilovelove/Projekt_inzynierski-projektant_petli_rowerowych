@@ -10,25 +10,18 @@ from streamlit_js_eval import get_geolocation
 from datetime import datetime
 import qrcode
 from io import BytesIO
-from app.db.database import engine, Base, User, SavedRoute
 
 # Importy z plików lokalnych
+from app.db.database import engine, Base, User, SavedRoute
 from app.services.auth import login_user, register_user
-from app.db.database import SessionLocal, SavedRoute
-
-# NOWE IMPORTY (KROK 2)
+from app.db.database import SessionLocal
 from app.utils.geo_utils import calculate_square_corners, create_gpx, generate_qr_image
 from app.services.route_service import find_circular_route, clean_line_coordinates
-from app.services.auth import login_user, register_user
-from app.db.database import SessionLocal, SavedRoute, User
 from app.services.route_service import get_graph
 from app.services.route_analysis_service import analyze_route_compatibility
 from app.services.manual_designer import show_manual_designer
 
-from app.db.database import engine, Base
 Base.metadata.create_all(bind=engine)
-
-
 
 # --- APLIKACJA STREAMLIT ---
 st.set_page_config(
@@ -44,25 +37,24 @@ st.set_page_config(
 
 st.markdown("""
     <style>
-        /* Ukrycie paska narzędzi Streamlit */
+        /* Precyzyjne ukrywanie elementów bez niszczenia przycisku sidebaru */
+        .stAppDeployButton {display:none !important;}
         #MainMenu {visibility: hidden;}
-        header {visibility: hidden;}
         footer {visibility: hidden;}
-        .stAppDeployButton {display:none;}
         div[data-testid="stStatusWidget"] {visibility: hidden;}
 
-        /* 1. Kolor tła Sidebara */
+        /* Kolor tła Sidebara */
         [data-testid="stSidebar"] {
             background-color:#006600;
             border-right: 2px solid  #cccc99 ;
         }
 
-        /* 2. Główny kolor tła aplikacji */
+        /* Główny kolor tła aplikacji */
         .stApp {
             background-color: #000000;
         }
 
-        /* 3. Stylizacja kontenerów */
+        /* Stylizacja kontenerów */
         div[data-testid="stVerticalBlockBorderWrapper"] {
             border: 1px solid #e0e0e0;
             border-radius: 10px;
@@ -70,7 +62,7 @@ st.markdown("""
             background-color: #ffffff;
         }
 
-        /* 4. Stylizacja kart w zakładkach */
+        /* Stylizacja kart w zakładkach */
         .stElementContainer div[data-testid="stExpander"] {
             border: 1px solid #ffcc00;
         }
@@ -116,7 +108,7 @@ def update_center():
     st.session_state.map_center = [st.session_state.lat_widget, st.session_state.lon_widget]
 
 
-# --- SIDEBAR: Autoryzacja ---
+# --- SIDEBAR: Autoryzacja i Parametry ---
 with st.sidebar:
     if st.session_state.user is None:
         st.header("🔑 Panel Użytkownika")
@@ -126,14 +118,13 @@ with st.sidebar:
             e = st.text_input("E-mail/Nick")
             p = st.text_input("Hasło", type="password")
             if st.button("Zaloguj"):
-                user = login_user(e, p)  # Logujemy mailem
+                user = login_user(e, p)
                 if user:
                     st.session_state.user = {"id": user.id, "name": user.username}
                     st.rerun()
                 else:
                     st.error("Błędny e-mail/nick lub hasło")
 
-            # --- RESET HASŁA (UPROSZCZONY) ---
             with st.expander("Zapomniałeś hasła?"):
                 reset_email = st.text_input("Wpisz e-mail do resetu", key="res_em")
                 if st.button("Wyślij kod"):
@@ -146,14 +137,11 @@ with st.sidebar:
                         st.info("Jeśli e-mail istnieje, kod został wysłany.")
                     else:
                         st.error("Nie znaleziono takiego adresu.")
-
-        else:  # REJESTRACJA
+        else:
             new_u = st.text_input("Twoje Imię/Nick")
             new_e = st.text_input("E-mail")
             new_p = st.text_input("Hasło", type="password")
             if st.button("Zarejestruj"):
-                from app.services.auth import register_user
-
                 res = register_user(new_u, new_e, new_p)
                 if res == "success":
                     st.success("Konto utworzone! Możesz się zalogować.")
@@ -164,15 +152,34 @@ with st.sidebar:
     else:
         st.header("👤 Twój Profil")
         st.success(f"Zalogowany jako: **{st.session_state.user['name']}**")
-
-        # Przycisk wylogowania, który przywróci widoczność formularzy
         if st.button("🚪 Wyloguj się", use_container_width=True):
             st.session_state.user = None
             st.rerun()
 
     st.divider()
-    st.header("🪧 Parametry Trasy")
-    if st.button("Użyj mojej lokalizacji"):
+    st.header("🎴 Parametry Trasy")
+
+    st.subheader("🔍 Wyszukaj adres/miejsce")
+    search_query = st.text_input("Wpisz np. miasto, ulicę:", key="search_query_input")
+    if st.button("🔎 Znajdź na mapie", use_container_width=True):
+        if search_query:
+            try:
+                from geopy.geocoders import Nominatim
+
+                geolocator = Nominatim(user_agent="bike_route_planner_2026")
+                location = geolocator.geocode(search_query)
+                if location:
+                    st.session_state.new_coords = [location.latitude, location.longitude]
+                    st.toast(f"Znaleziono: {location.address[:45]}...", icon="📍")
+                    st.rerun()
+                else:
+                    st.error("Nie znaleziono takiego miejsca.")
+            except ModuleNotFoundError:
+                st.error("⚠️ Uruchom w terminalu: `pip install geopy` i odśwież stronę.")
+            except Exception as e:
+                st.error(f"Błąd wyszukiwania: {e}")
+
+    if st.button("Użyj mojej lokalizacji", use_container_width=True):
         st.session_state.loc_requested = True
         st.rerun()
 
@@ -182,7 +189,7 @@ with st.sidebar:
     dist_km = st.slider("Dystans (km)", 5, 30, 15)
     bike_type = st.selectbox("Typ roweru(opcjonalne)",
                              ["Brak", "Szosowy/miejski", "Gravel(hybrydowy)", "MTB(terenowy)"])
-    generate_btn = st.button("🚴‍♂️ Wygeneruj Trasę", type="primary")
+    generate_btn = st.button("🚴‍♂️ Wygeneruj Trasę", type="primary", use_container_width=True)
 
 tab1, tab2, tab3, tab4 = st.tabs(
     ["🚲 Projektant automatyczny", "Projektant ręczny", "🌍 Społeczność", "📒 Zapisane Trasy"])
@@ -193,7 +200,7 @@ with tab1:
         if st.button("Wyczyść i zacznij od nowa"):
             st.session_state.generated_geojson = None
             st.session_state.load_info = None
-            st.session_state.auto_coords = None  # Czyścimy widmo
+            st.session_state.auto_coords = None
             st.rerun()
 
     if generate_btn:
@@ -201,26 +208,20 @@ with tab1:
             try:
                 curr_lat = st.session_state.lat_widget
                 curr_lon = st.session_state.lon_widget
-
                 side_m = (dist_km * 1000 * 0.65) / 4
                 corners = calculate_square_corners(curr_lon, curr_lat, side_m)
-
                 G = get_graph(curr_lat, curr_lon, dist=side_m * 1.5, network_type="bike")
-                st.session_state.G = G  # Zapisujemy graf do sesji dla obu zakładek
+                st.session_state.G = G
 
                 route_nodes = find_circular_route(G, corners)
                 if route_nodes:
                     nodes_df, _ = ox.graph_to_gdfs(G)
-
                     raw_coords = [[nodes_df.loc[n].y, nodes_df.loc[n].x] for n in route_nodes]
                     clean_input = [[c[1], c[0]] for c in raw_coords]
                     cleaned = clean_line_coordinates(clean_input)
-
                     display_coords = [[c[1], c[0]] for c in cleaned]
 
-                    # --- Zapisujemy widmo dla zakładki ręcznej ---
                     st.session_state.auto_coords = display_coords
-
                     dist = ox.routing.route_to_gdf(G, route_nodes)['length'].sum() / 1000
                     st.session_state.route_score = analyze_route_compatibility(G, route_nodes, bike_type)
                     st.session_state.load_info = f"Nowa trasa {round(dist, 1)} km"
@@ -261,10 +262,17 @@ with tab1:
                         """)
                     st.caption("Ocena końcowa to średnia ważona trudności z całej trasy.")
 
-        m = folium.Map(location=st.session_state.map_center, zoom_start=13)
+        m = folium.Map(
+            location=st.session_state.map_center,
+            zoom_start=13,
+            tiles='https://mt1.google.com/vt/lyrs=m&x={x}&y={y}&z={z}',
+            attr='Google Maps'
+        )
         folium.GeoJson(data, style_function=lambda x: {'color': '#2ecc71', 'weight': 5}).add_to(m)
         folium.Marker(start_point, popup="Start/Meta", icon=folium.Icon(color='red')).add_to(m)
-        st_folium(m, width=1200, height=550, key="active_gen_map")
+
+        # POPRAWKA: Automatyczne dopasowanie do kontenera zamiast sztywnego 1200px
+        st_folium(m, use_container_width=True, height=550, key="active_gen_map")
 
         st.divider()
         st.subheader("📲 Wyślij trasę na telefon")
@@ -286,9 +294,6 @@ with tab1:
 
             if st.button("📧 WYŚLIJ NA MÓJ E-MAIL", use_container_width=True):
                 if st.session_state.user:
-                    from app.db.database import SessionLocal, User
-                    from app.services.email_service import send_custom_email
-
                     db = SessionLocal()
                     try:
                         curr_user = db.get(User, st.session_state.user['id'])
@@ -301,6 +306,8 @@ with tab1:
 
                     if target_email:
                         with st.spinner("Wysyłanie..."):
+                            from app.services.email_service import send_custom_email
+
                             success = send_custom_email(
                                 recipient_email=target_email.strip(),
                                 subject="Twoja trasa GPX",
@@ -312,8 +319,8 @@ with tab1:
                                 st.toast("E-mail został wysłany!")
                             else:
                                 st.error("Błąd serwera e-mail.")
-                    else:
-                        st.error("Nie znaleziono adresu e-mail.")
+                else:
+                    st.error("Nie zalogowano lub nie znaleziono adresu e-mail.")
 
         with col_down3:
             if st.session_state.user:
@@ -330,21 +337,21 @@ with tab1:
                         st.success("Zapisano!")
             else:
                 st.button("💾 Zaloguj się by zapisać", disabled=True, use_container_width=True)
-
     else:
         st.info("Ustaw parametry i naciśnij 'Wygeneruj Trasę', by uzyskać podgląd...")
-        m_preview = folium.Map(location=st.session_state.map_center, zoom_start=13)
-        # Przywrócenie pinezki lokalizacji przed wygenerowaniem trasy
-        folium.Marker(
-            st.session_state.map_center,
-            popup="Twoja lokalizacja",
-            icon=folium.Icon(color='blue', icon='info-sign')
-        ).add_to(m_preview)
-        st_folium(m_preview, width=1200, height=550, key="preview_map")
+        m_preview = folium.Map(
+            location=st.session_state.map_center,
+            zoom_start=13,
+            tiles='https://mt1.google.com/vt/lyrs=m&x={x}&y={y}&z={z}',
+            attr='Google Maps'
+        )
+        folium.Marker(st.session_state.map_center, popup="Twoja lokalizacja",
+                      icon=folium.Icon(color='blue', icon='info-sign')).add_to(m_preview)
+
+        # POPRAWKA: Automatyczne dopasowanie do kontenera zamiast sztywnego 1200px
+        st_folium(m_preview, use_container_width=True, height=550, key="preview_map")
 
 with tab2:
-    from app.services.manual_designer import show_manual_designer
-
     show_manual_designer()
 
 with tab3:
@@ -362,7 +369,6 @@ with tab3:
             c1.write(f"**{r.name}** ({r_dist} km) | Autor: {r.owner.username}")
             if c2.button("↗️ Wczytaj", key=f"pub_{r.id}"):
                 load_route_action(r.geojson_data, r.name)
-                # Przy wczytywaniu ze społeczności też ustawiamy widmo
                 st.session_state.auto_coords = [[c[1], c[0]] for c in r_data['features'][0]['geometry']['coordinates']]
                 st.rerun()
     db.close()
