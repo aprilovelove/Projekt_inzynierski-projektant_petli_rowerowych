@@ -32,10 +32,13 @@ def alternative_geocode(query: str):
         if key in q_clean:
             return coords[0], coords[1], coords[2]
 
-    # 2. Zapytanie do API Photon
+    # 2. Zapytanie do API Photon (Poprawione parametry lokalizacji oraz dodany User-Agent)
     try:
-        url = f"https://photon.komoot.io/api/?q={requests.utils.quote(query)}&bias_ltrb=18.85,50.22,19.05,50.35&limit=1"
-        response = requests.get(url, timeout=3)
+        # Centrujemy wyszukiwanie wokół Chorzowa/Śląska (lat=50.29, lon=18.95) za pomocą prawidłowych parametrów lon i lat
+        url = f"https://photon.komoot.io/api/?q={requests.utils.quote(query)}&lat=50.29&lon=18.95&limit=1"
+        headers = {"User-Agent": "BikeRoutePlannerProjectEngine/1.0"}
+
+        response = requests.get(url, headers=headers, timeout=5)
         if response.status_code == 200:
             data = response.json()
             if data and data.get("features"):
@@ -176,9 +179,7 @@ def show_manual_designer():
 
     m_manual = folium.Map(
         location=map_center,
-        zoom_start=14,
-        tiles='https://mt1.google.com/vt/lyrs=m&x={x}&y={y}&z={z}',
-        attr='Google Maps'
+        zoom_start=14
     )
 
     if st.session_state.manual_geojson:

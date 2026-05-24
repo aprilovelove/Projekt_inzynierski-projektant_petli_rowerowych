@@ -10,17 +10,22 @@ from streamlit_js_eval import get_geolocation
 from datetime import datetime
 import qrcode
 from io import BytesIO
+from sqlalchemy import Column, Integer, String, ForeignKey, DateTime, func
+from sqlalchemy.orm import relationship
 
 # Importy z plików lokalnych
-from app.db.database import engine, Base, User, SavedRoute
-from app.services.auth import login_user, register_user
+from app.db.database import engine, Base, User, SavedRoute, RouteReview
 from app.db.database import SessionLocal
 from app.utils.geo_utils import calculate_square_corners, create_gpx, generate_qr_image
 from app.services.route_service import find_circular_route, clean_line_coordinates
 from app.services.route_service import get_graph
 from app.services.route_analysis_service import analyze_route_compatibility
 from app.services.manual_designer import show_manual_designer
+from app.services.auth import login_user, register_user
 
+
+
+# Automatyczne utworzenie tabeli w NeonDB przy starcie aplikacji
 Base.metadata.create_all(bind=engine)
 
 # --- APLIKACJA STREAMLIT ---
@@ -106,6 +111,52 @@ def load_route_action(geojson_data, name):
 
 def update_center():
     st.session_state.map_center = [st.session_state.lat_widget, st.session_state.lon_widget]
+
+
+# --- OKNO MODALNE (DIALOGOWE) DO DODAWANIA OPINII ---
+@st.dialog("💬 Dodaj opinię o trasie")
+def review_dialog(route_id, route_name):
+    st.write(f"Oceniasz trasę: **{route_name}**")
+
+    # Tickboxy wyboru składowych recenzji
+    add_rating = st.checkbox("Chcę dodać ocenę punktową", value=True)
+    rating_val = None
+    if add_rating:
+        rating_val = st.slider("Ocena trasy (1 - słaba, 5 - genialna)", 1, 5, 5)
+
+    add_comment = st.checkbox("Chcę dodać komentarz tekstowy", value=True)
+    comment_val = None
+    if add_comment:
+        comment_val = st.text_area("Wpisz swoją opinię o warunkach na trasie:",
+                                   placeholder="np. Świetne widoki, ale na 5 kilometrze sporo piasku...")
+
+    st.divider()
+    if st.button("Zapisz opinię", use_container_width=True, type="primary"):
+        if not add_rating and not add_comment:
+            st.error("Musisz wybrać przynajmniej jedną opcję (ocenę lub komentarz)!")
+            return
+
+        if add_comment and not comment_val.strip():
+            st.error("Komentarz nie może być pusty, jeśli zaznaczyłeś tę opcję.")
+            return
+
+        # Zapis do bazy danych
+        db = SessionLocal()
+        try:
+            new_review = RouteReview(
+                route_id=route_id,
+                user_id=st.session_state.user['id'],
+                rating=rating_val if add_rating else None,
+                comment=comment_val if add_comment else None
+            )
+            db.add(new_review)
+            db.commit()
+            st.toast("Dziękujemy za dodanie opinii!", icon="🎉")
+            st.rerun()
+        except Exception as e:
+            st.error(f"Błąd zapisu opinii: {e}")
+        finally:
+            db.close()
 
 
 # --- SIDEBAR: Autoryzacja i Parametry ---
@@ -251,7 +302,7 @@ with tab1:
 
         status, color = st.session_state.route_score
         if status:
-            c2.markdown(f"**Status dopasowania do roweru:**\n\n:{color}[{status}]")
+            c2.markdown(f"**Status dopasowania do roweru:**\n\n:**{color}**[{status}]")
             with c3:
                 with st.popover("❓", help="Dowiedz się, jak liczymy dopasowanie"):
                     st.markdown("### 🧠 Jak działa nasza analiza?")
@@ -264,14 +315,11 @@ with tab1:
 
         m = folium.Map(
             location=st.session_state.map_center,
-            zoom_start=13,
-            tiles='https://mt1.google.com/vt/lyrs=m&x={x}&y={y}&z={z}',
-            attr='Google Maps'
+            zoom_start=13
         )
         folium.GeoJson(data, style_function=lambda x: {'color': '#2ecc71', 'weight': 5}).add_to(m)
         folium.Marker(start_point, popup="Start/Meta", icon=folium.Icon(color='red')).add_to(m)
 
-        # POPRAWKA: Automatyczne dopasowanie do kontenera zamiast sztywnego 1200px
         st_folium(m, use_container_width=True, height=550, key="active_gen_map")
 
         st.divider()
@@ -341,14 +389,11 @@ with tab1:
         st.info("Ustaw parametry i naciśnij 'Wygeneruj Trasę', by uzyskać podgląd...")
         m_preview = folium.Map(
             location=st.session_state.map_center,
-            zoom_start=13,
-            tiles='https://mt1.google.com/vt/lyrs=m&x={x}&y={y}&z={z}',
-            attr='Google Maps'
+            zoom_start=13
         )
         folium.Marker(st.session_state.map_center, popup="Twoja lokalizacja",
                       icon=folium.Icon(color='blue', icon='info-sign')).add_to(m_preview)
 
-        # POPRAWKA: Automatyczne dopasowanie do kontenera zamiast sztywnego 1200px
         st_folium(m_preview, use_container_width=True, height=550, key="preview_map")
 
 with tab2:
@@ -357,20 +402,52 @@ with tab2:
 with tab3:
     st.header("🌍 Trasy dodane przez społeczność")
     db = SessionLocal()
+
+    # Pobieranie tras publicznych
     routes = db.query(SavedRoute).filter_by(visibility='public').all()
+
     for r in routes:
+        # Dynamiczne obliczanie średniej ocen dla danej trasy
+        avg_rating_query = db.query(func.avg(RouteReview.rating)).filter(RouteReview.route_id == r.id).scalar()
+        avg_text = f"⭐ {round(avg_rating_query, 1)}/5" if avg_rating_query else "🔹 Brak ocen"
+
         with st.container(border=True):
-            c1, c2 = st.columns([3, 1])
+            c1, c2, c3 = st.columns([2.5, 1, 1])
             try:
                 r_data = json.loads(r.geojson_data)
                 r_dist = r_data['features'][0]['properties'].get('length_km', '??')
             except:
                 r_dist = "??"
-            c1.write(f"**{r.name}** ({r_dist} km) | Autor: {r.owner.username}")
-            if c2.button("↗️ Wczytaj", key=f"pub_{r.id}"):
+
+            # Wyświetlanie nazwy, dystansu, autora oraz wyliczonej średniej ocen
+            c1.write(f"**{r.name}** ({r_dist} km) | Autor: `{r.owner.username}` | **{avg_text}**")
+
+            if c2.button("↗️ Wczytaj", key=f"pub_{r.id}", use_container_width=True):
                 load_route_action(r.geojson_data, r.name)
                 st.session_state.auto_coords = [[c[1], c[0]] for c in r_data['features'][0]['geometry']['coordinates']]
                 st.rerun()
+
+            # Przycisk otwierający okienko dialogowe z opinią
+            if st.session_state.user:
+                if c3.button("💬 Dodaj opinię", key=f"rev_btn_{r.id}", use_container_width=True):
+                    review_dialog(r.id, r.name)
+            else:
+                c3.button("💬 Zaloguj się", key=f"rev_dis_{r.id}", disabled=True, use_container_width=True,
+                          help="Musisz być zalogowany, by oceniać.")
+
+            # Sekcja wyświetlania dotychczasowych komentarzy pod trasą (Expander)
+            reviews = db.query(RouteReview).filter(RouteReview.route_id == r.id).order_by(
+                RouteReview.created_at.desc()).all()
+            if reviews:
+                with st.expander(f"👁️ Zobacz opinie użytkowników ({len(reviews)})"):
+                    for rev in reviews:
+                        stars = f" {'⭐' * rev.rating}" if rev.rating else ""
+                        author = rev.user.username if rev.user else "Anonim"
+                        comment_text = f'"{rev.comment}"' if rev.comment else "_Brak komentarza tekstowego_"
+                        st.markdown(f"**{author}**{stars}  \n{comment_text}")
+                        st.caption(f"Dodano: {rev.created_at.strftime('%Y-%m-%d %H:%M')}")
+                        st.divider()
+
     db.close()
 
 with tab4:
