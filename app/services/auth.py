@@ -4,9 +4,11 @@ import random
 import string
 from app.db.database import User, SessionLocal
 
+#hashuje hasło
 def hash_password(password):
     return bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
 
+#sprawdza czy wpisane hasło jest poprawne
 def check_password(password, hashed):
     return bcrypt.checkpw(password.encode('utf-8'), hashed.encode('utf-8'))
 
@@ -21,16 +23,14 @@ def register_user(username, password):
     db.close()
     return True
 
-
+#definicja funkcji logowania
 def login_user(login_id, password):
     db = SessionLocal()
     try:
-        # ZMIANA: Szukamy dopasowania w kolumnie username LUB email
         user = db.query(User).filter(
             (User.username == login_id) | (User.email == login_id)
         ).first()
 
-        # Jeśli użytkownik istnieje, sprawdzamy hasło
         if user and bcrypt.checkpw(password.encode('utf-8'), user.password.encode('utf-8')):
             return user
         return None
@@ -42,7 +42,7 @@ def login_user(login_id, password):
 
 EMAIL_REGEX = r'^[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+$'
 
-
+#definicja funkcji rejestracji
 def register_user(username, email, password):
     # 1. Walidacja formatu e-mail
     if not re.match(EMAIL_REGEX, email):
@@ -50,7 +50,6 @@ def register_user(username, email, password):
 
     db = SessionLocal()
     try:
-        # 2. Sprawdzenie, czy nazwa użytkownika lub e-mail już istnieją
         existing_user = db.query(User).filter(
             (User.username == username) | (User.email == email)
         ).first()
@@ -58,7 +57,6 @@ def register_user(username, email, password):
         if existing_user:
             return "exists"
 
-        # 3. Tworzenie nowego użytkownika (z uwzględnieniem pola email!)
         new_user = User(
             username=username,
             email=email,
@@ -74,8 +72,9 @@ def register_user(username, email, password):
         db.rollback()  # W razie błędu wycofujemy zmiany
         return "error"
     finally:
-        db.close()  # Zawsze zamykamy sesję
+        db.close()
 
+#definicja funkcji do obsługi sytuacji z resetem hasła
 def initiate_password_reset(email):
     db = SessionLocal()
     user = db.query(User).filter_by(email=email).first()
