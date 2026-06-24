@@ -16,12 +16,13 @@ from sqlalchemy.orm import relationship
 # Importy z plików lokalnych
 from app.db.database import engine, Base, User, SavedRoute, RouteReview
 from app.db.database import SessionLocal
-from app.utils.geo_utils import calculate_square_corners, create_gpx, generate_qr_image
+from app.utils.geo_utils import calculate_square_corners, create_gpx
 from app.services.route_service import find_circular_route, clean_line_coordinates
 from app.services.route_service import get_graph
 from app.services.route_analysis_service import analyze_route_compatibility
 from app.services.manual_designer import show_manual_designer
 from app.services.auth import login_user, register_user
+from app.services.email_service import send_custom_email
 
 
 
@@ -354,7 +355,6 @@ with tab1:
 
                     if target_email:
                         with st.spinner("Wysyłanie..."):
-                            from app.services.email_service import send_custom_email
 
                             success = send_custom_email(
                                 recipient_email=target_email.strip(),
