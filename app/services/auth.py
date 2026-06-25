@@ -12,17 +12,6 @@ def hash_password(password):
 def check_password(password, hashed):
     return bcrypt.checkpw(password.encode('utf-8'), hashed.encode('utf-8'))
 
-def register_user(username, password):
-    db = SessionLocal()
-    if db.query(User).filter_by(username=username).first():
-        db.close()
-        return False
-    new_user = User(username=username, password=hash_password(password))
-    db.add(new_user)
-    db.commit()
-    db.close()
-    return True
-
 #definicja funkcji logowania
 def login_user(login_id, password):
     db = SessionLocal()
