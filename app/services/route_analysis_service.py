@@ -1,67 +1,149 @@
 import osmnx as ox
-# --- NOWA LOGIKA HEURYSTYCZNA ---
 
-# Progi punktowe dla rowerów (średni koszt "trudności" na odcinek)
-BIKE_THRESHOLD = {
-    "Szosowy/miejski": {"max_allowed": 2.5, "label": "Szosowy"},
-    "Gravel(hybrydowy)": {"max_allowed": 6.0, "label": "Gravel"},
-    "MTB(terenowy)": {"max_allowed": 10.0, "label": "MTB"}
+BIKE_PROFILES = {
+    "Szosowy/miejski": {
+        "surface_paved": 0,
+        "surface_unpaved": 5,
+        "highway_smooth": 0,
+        "highway_rough": 4,
+        "track_good": 3,
+        "track_bad": 5,
+        "max_perfect": 1.2,
+        "max_acceptable": 2.2
+    },
+    "Gravel(hybrydowy)": {
+        "surface_paved": 0,
+        "surface_unpaved": 1.5,
+        "highway_smooth": 0,
+        "highway_rough": 1.5,
+        "track_good": 0.5,
+        "track_bad": 4.5,
+        "max_perfect": 1.8,
+        "max_acceptable": 3.0
+    },
+    "MTB(terenowy)": {
+        "surface_paved": 1.5,
+        "surface_unpaved": 0,
+        "highway_smooth": 1.5,
+        "highway_rough": 0,
+        "track_good": 0,
+        "track_bad": 1.0,
+        "max_perfect": 1.5,
+        "max_acceptable": 3.5
+    }
 }
 
 
-def get_edge_difficulty(edge_data):
-    score = 5  # jeżeli będzie brak danych to zostanie 5 czyli 'środkowa' trudność
+def get_edge_difficulty(edge_data, bike_type):
+    """Ocenia trudność odcinka w skali 0-5 w zależności od profilu roweru."""
+    profile = BIKE_PROFILES.get(bike_type)
+    if not profile:
+        return 2.5
 
-    #sprawdzamy tag 'surface' - w idealnej sytuacji jest on niepusty ale bardzo często jest pusty
+    score = 2.5
+
+    # 1. Analiza nawierzchni (surface)
     surface = edge_data.get('surface', '')
     if any(s in ['asphalt', 'concrete', 'paved', 'paving_stones'] for s in
            ([surface] if isinstance(surface, str) else surface)):
-        score = 0
+        score = profile["surface_paved"]
     elif any(s in ['unpaved', 'gravel', 'ground', 'dirt', 'grass', 'sand'] for s in
              ([surface] if isinstance(surface, str) else surface)):
-        score = 8
+        score = profile["surface_unpaved"]
 
-    # analiza drugiego tagu 'highway'
+    # 2. Heurystyka po typie drogi (highway)
     highway = edge_data.get('highway', '')
     if any(h in ['primary', 'secondary', 'tertiary', 'residential'] for h in
            ([highway] if isinstance(highway, str) else highway)):
-        score = min(score, 1)  #dla powyższych wartości tagu highway przyjmujemy że tak oznaczona droga jest asfaltowa - trudność 1
+        # Naprawiony błąd: drogi wysokiej klasy zawsze powinny dążyć do gładkości z profilu
+        score = profile["highway_smooth"]
     if any(h in ['track', 'path'] for h in ([highway] if isinstance(highway, str) else highway)):
-        score = max(score, 7)  #te tagi to raczej droga leśna  - podbijamy trudność do minimum 7
+        score = max(score, profile["highway_rough"])
 
-    #analiza tagu tracktype(dla dróg ~leśnych)
+    # 3. Doprecyzowanie klasy drogi leśnej (tracktype)
     ttype = edge_data.get('tracktype', '')
-    if ttype == 'grade1': score = min(score, 2) #droga o twardej naturalnej nawierzchni - obniżamy do 2
-    if ttype in ['grade4', 'grade5']: score = max(score, 9) #drogi naturalne, miękkie , błoto, piach - 9
+    if ttype == 'grade1':
+        score = profile["track_good"]
+    if ttype in ['grade4', 'grade5']:
+        score = profile["track_bad"]
 
     return score
 
-#funkcja główna
+
 def analyze_route_compatibility(G, route_nodes, bike_type):
+    """
+    Analizuje trasę pod kątem wybranego roweru, wyliczając trudność jako średnią ważoną
+    długością odcinków, zapobiegając fałszowaniu wyników przez mikro-krawędzie.
+    """
     if not bike_type or bike_type == "Brak":
-        return None, None
+        return None, None, None
 
-    edges = ox.routing.route_to_gdf(G, route_nodes)  #każdy wiersz w tabeli gdf to jeden odcinek drogi z kompletem tagów
+    edges = ox.routing.route_to_gdf(G, route_nodes)
 
-    total_score = 0
+    weighted_score_sum = 0
+    total_route_length_m = 0
     valid_edges = 0
 
-    for _, row in edges.iterrows(): #pętla iteruje po wszystkich odcinkach z edges i wywołuje funkcję get_edge_difficulty
-        total_score += get_edge_difficulty(row)
+    paved_length = 0
+    unpaved_length = 0
+    unknown_length = 0
+
+    for _, row in edges.iterrows():
+        edge_len = row.get('length', 0)
+        if edge_len <= 0:
+            continue
+
+        difficulty = get_edge_difficulty(row, bike_type)
+
+        # ŚREDNIA WAŻONA: Trudność mnożona przez metry bieżące odcinka
+        weighted_score_sum += (difficulty * edge_len)
+        total_route_length_m += edge_len
         valid_edges += 1
 
-    if valid_edges == 0:    #bezpiecznik gdyby trasa miała 0 krawędzi
-        return "Brak danych do analizy", "gray"
+        # Agregacja nawierzchni
+        surface = row.get('surface', '')
+        if any(s in ['asphalt', 'concrete', 'paved', 'paving_stones'] for s in
+               ([surface] if isinstance(surface, str) else surface)):
+            paved_length += edge_len
+        elif any(s in ['unpaved', 'gravel', 'ground', 'dirt', 'grass', 'sand'] for s in
+                 ([surface] if isinstance(surface, str) else surface)):
+            unpaved_length += edge_len
+        else:
+            highway = row.get('highway', '')
+            if any(h in ['primary', 'secondary', 'tertiary', 'residential'] for h in
+                   ([highway] if isinstance(highway, str) else highway)):
+                paved_length += edge_len
+            elif any(h in ['track', 'path'] for h in ([highway] if isinstance(highway, str) else highway)):
+                unpaved_length += edge_len
+            else:
+                unknown_length += edge_len
 
-    avg_score = total_score / valid_edges      #obliczamy score dla całej trasy (zestawu krawędzi z edges)
-    threshold = BIKE_THRESHOLD[bike_type]["max_allowed"]
+    if valid_edges == 0 or total_route_length_m == 0:
+        return "Brak danych do analizy", "gray", None
 
-    # Logika oceny
-    if avg_score <= threshold:
-        return f"🟢 Idealna (Trudność: {round(avg_score, 1)})", "green"
-    elif avg_score <= threshold + 2.0:
-        return f"🟡 Przejezdna (Trudność: {round(avg_score, 1)})", "orange"
+    # Wyznaczenie średniej ważonej zamiast arytmetycznej
+    avg_score = weighted_score_sum / total_route_length_m
+    profile = BIKE_PROFILES[bike_type]
+
+    # Obliczanie końcowych statystyk procentowych
+    surface_stats = {
+        "paved_pct": round((paved_length / total_route_length_m) * 100),
+        "unpaved_pct": round((unpaved_length / total_route_length_m) * 100),
+        "unknown_pct": round((unknown_length / total_route_length_m) * 100),
+        "paved_km": round(paved_length / 1000, 1),
+        "unpaved_km": round(unpaved_length / 1000, 1),
+        "unknown_km": round(unknown_length / 1000, 1)
+    }
+
+    # Wyznaczenie statusu dopasowania
+    if avg_score <= profile["max_perfect"]:
+        status_text = f"🟢 Idealna dla: {bike_type.split('/')[0].split('(')[0]} (Indeks: {round(avg_score, 1)})"
+        color = "green"
+    elif avg_score <= profile["max_acceptable"]:
+        status_text = f"🟡 Przejezdna (Indeks: {round(avg_score, 1)})"
+        color = "orange"
     else:
-        return f"🔴 Zbyt trudna (Trudność: {round(avg_score, 1)})", "red"
+        status_text = f"🔴 Zbyt trudna / Niekompatybilna (Indeks: {round(avg_score, 1)})"
+        color = "red"
 
-    #logika oceny jeszcze jest raczej do zmiany - trzeba wprowadzić jakąś zależność od typu roweru
+    return status_text, color, surface_stats

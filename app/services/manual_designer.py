@@ -20,26 +20,24 @@ LOCAL_POIS = {
     "silesia city center": (50.2694, 19.0041, "Silesia City Center, Katowice")
 }
 
-# ta funkcja zamienia tekst na współrzędne
+# Funkcja zamieniająca tekst na współrzędne
 def alternative_geocode(query: str):
+    q_clean = query.lower().strip() # usuwanie wielkich liter i spacji
 
-    q_clean = query.lower().strip()#usuwanie małych liter i spacji
-
-    #sprawdzenie w słowniku ratunkowym
+    # Sprawdzenie w słowniku ratunkowym
     for key, coords in LOCAL_POIS.items():
         if key in q_clean:
             return coords[0], coords[1], coords[2]
 
-    #ten blok try przygotowuje zapytanie HTTP GET do darmowego API Photon
+    # Przygotowanie zapytania HTTP GET do darmowego API Photon
     try:
-        # Centrujemy wyszukiwanie wokół Chorzowa/Śląska (lat=50.29, lon=18.95) za pomocą prawidłowych parametrów lon i lat
         url = f"https://photon.komoot.io/api/?q={requests.utils.quote(query)}&lat=50.29&lon=18.95&limit=1"
         headers = {"User-Agent": "BikeRoutePlannerProjectEngine/1.0"}
 
-        response = requests.get(url, headers=headers, timeout=5) #fizyczne zapytanie do serwera Photon ; limit 5 sekund
+        response = requests.get(url, headers=headers, timeout=5) # fizyczne zapytanie do serwera Photon; limit 5 sekund
         if response.status_code == 200:
             data = response.json()
-            if data and data.get("features"):   #sprawdzamy dopasowania i budujemy pełny adres
+            if data and data.get("features"): # sprawdzamy dopasowania i budujemy pełny adres
                 feat = data["features"][0]
                 lon, lat = feat["geometry"]["coordinates"]
                 name = feat["properties"].get("name", query)
@@ -52,7 +50,7 @@ def alternative_geocode(query: str):
 
     return None
 
-#funkcja widoku projektanta - nagłówki i instrukcje
+# Funkcja widoku projektanta - nagłówki i instrukcje
 def show_manual_designer():
     st.header("📍 Projektant ręczny (Wyszukiwarka Punktów)")
     st.write("Wpisz lokalizacje, zweryfikuj podgląd tekstowy, a następnie nanieś je i połącz w trasę!")
@@ -99,7 +97,7 @@ def show_manual_designer():
                             placeholder="np. Lidl Gałeczki, Chorzów")
         st.session_state.manual_points[i] = val
 
-        #live komunikacik pod każdym polem czy znaleziono punkt
+        # Live komunikacik pod każdym polem czy znaleziono punkt
         if val.strip():
             res = alternative_geocode(val)
             if res:
@@ -114,7 +112,7 @@ def show_manual_designer():
 
     st.divider()
 
-    #nanoszenie punktów na mapę
+    # Nanoszenie punktów na mapę
     if st.button("🔍 1. Zatwierdź i nanieś punkty na mapę", use_container_width=True, type="secondary"):
         if not all_fields_resolved or len(live_coords) != len(st.session_state.manual_points):
             st.error("Nie wszystkie punkty zostały poprawnie odnalezione lub któreś pole jest puste!")
@@ -122,14 +120,14 @@ def show_manual_designer():
             st.session_state.confirmed_coords = live_coords
             st.success(f"Pomyślnie narysowano punkty ({len(live_coords)}) na mapie podglądu!")
 
-    #budowanie trasy
+    # Budowanie trasy przy użyciu algorytmu A*
     if st.button("🪡 2. Połącz punkty i wyznacz trasę rowerową", type="primary", use_container_width=True):
         coords_list = st.session_state.confirmed_coords
 
         if len(coords_list) < 2:
             st.error("Najpierw musisz poprawnie zatwierdzić i nanieść punkty na mapę przyciskiem (Krok 1)!")
         else:
-            with st.spinner("Trwa kalkulacja i dopasowanie trasy do sieci rowerowej..."):
+            with st.spinner("Trwa kalkulacja trasy algorytmem A* i dopasowanie do sieci..."):
                 try:
                     full_route_coords = []
                     total_length_m = 0
@@ -140,6 +138,12 @@ def show_manual_designer():
                     G_manual = ox.graph_from_point((center_lat, center_lon), dist=8000, network_type="bike")
                     nodes_df, _ = ox.graph_to_gdfs(G_manual)
 
+                    # Definicja funkcji heurystycznej odległości (Euklidesowa odległość geometryczna dla A*)
+                    def heuristic(u, v):
+                        x1, y1 = G_manual.nodes[u]['x'], G_manual.nodes[u]['y']
+                        x2, y2 = G_manual.nodes[v]['x'], G_manual.nodes[v]['y']
+                        return ((x1 - x2) ** 2 + (y1 - y2) ** 2) ** 0.5
+
                     for idx in range(len(coords_list) - 1):
                         orig_coords = coords_list[idx]
                         dest_coords = coords_list[idx + 1]
@@ -147,7 +151,8 @@ def show_manual_designer():
                         orig_node = ox.nearest_nodes(G_manual, X=orig_coords[1], Y=orig_coords[0])
                         dest_node = ox.nearest_nodes(G_manual, X=dest_coords[1], Y=dest_coords[0])
 
-                        sub_route = nx.shortest_path(G_manual, orig_node, dest_node, weight='length')
+                        # WYMIANA: Użycie nx.astar_path zamiast nx.shortest_path
+                        sub_route = nx.astar_path(G_manual, orig_node, dest_node, heuristic=heuristic, weight='length')
 
                         for u, v in zip(sub_route[:-1], sub_route[1:]):
                             edge_data = G_manual.get_edge_data(u, v)
@@ -167,11 +172,11 @@ def show_manual_designer():
                             "properties": {"length_km": round(total_length_m / 1000, 2)}
                         }]
                     }
-                    st.toast("Trasa wyznaczona!", icon="🚴")
+                    st.toast("Trasa wyznaczona za pomocą A*!", icon="🚴")
                 except Exception as e:
                     st.error(f"Błąd sieci rowerowej: {e}. Spróbuj skorygować punkty pośrednie.")
 
-    #renderowanie mapy
+    # Renderowanie mapy
     coords_list = st.session_state.confirmed_coords
     map_center = [coords_list[0][0], coords_list[0][1]] if coords_list else [50.2859, 18.9549]
 
@@ -180,7 +185,7 @@ def show_manual_designer():
         zoom_start=14
     )
 
-    if st.session_state.manual_geojson: #narzucanie wyznaczonej trasy na mape
+    if st.session_state.manual_geojson: # narzucanie wyznaczonej trasy na mapę
         folium.GeoJson(st.session_state.manual_geojson,
                        style_function=lambda x: {'color': '#3498db', 'weight': 6}).add_to(m_manual)
         dist_km = st.session_state.manual_geojson['features'][0]['properties']['length_km']
@@ -196,7 +201,7 @@ def show_manual_designer():
 
     st_folium(m_manual, use_container_width=True, height=500, key="manual_designer_map")
 
-    #eksport trasy
+    # Eksport trasy
     if st.session_state.manual_geojson:
         st.divider()
         st.subheader("📲 Opcje zapisu i wysyłki trasy ręcznej")
@@ -207,7 +212,7 @@ def show_manual_designer():
 
         col_down1, col_down2, col_down3 = st.columns([1, 1, 1])
 
-        #pobranie lokalne pliku
+        # Pobranie lokalne pliku
         with col_down1:
             st.download_button(
                 label="🗺️ POBIERZ PLIK GPX",
@@ -218,7 +223,7 @@ def show_manual_designer():
                 key=f"dl_manual_{ts}"
             )
 
-        #wysyłka na email
+        # Wysyłka na email
         with col_down2:
             if st.button("📧 WYŚLIJ NA MÓJ E-MAIL", use_container_width=True, key="email_manual_btn"):
                 if st.session_state.user:
@@ -251,7 +256,7 @@ def show_manual_designer():
                 else:
                     st.error("Musisz być zalogowany, aby wysłać trasę na e-mail.")
 
-        #zapis w bazie danych ; zapis w profilu
+        # Zapis w bazie danych; zapis w profilu
         with col_down3:
             if st.session_state.user:
                 with st.popover("💾 Zapisz w profilu", use_container_width=True):

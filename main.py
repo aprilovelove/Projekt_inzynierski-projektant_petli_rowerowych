@@ -24,8 +24,6 @@ from app.services.manual_designer import show_manual_designer
 from app.services.auth import login_user, register_user
 from app.services.email_service import send_custom_email
 
-
-
 # Automatyczne utworzenie tabeli w NeonDB przy starcie aplikacji
 Base.metadata.create_all(bind=engine)
 
@@ -80,7 +78,7 @@ if 'user' not in st.session_state: st.session_state.user = None
 if 'generated_geojson' not in st.session_state: st.session_state.generated_geojson = None
 if 'map_center' not in st.session_state: st.session_state.map_center = [50.2859, 18.9549]
 if 'load_info' not in st.session_state: st.session_state.load_info = None
-if 'route_score' not in st.session_state: st.session_state.route_score = (None, None)
+if 'route_score' not in st.session_state: st.session_state.route_score = (None, None, None)
 if 'loc_requested' not in st.session_state: st.session_state.loc_requested = False
 
 # --- MECHANIZM AKTUALIZACJI WSPÓŁRZĘDNYCH ---
@@ -119,7 +117,6 @@ def update_center():
 def review_dialog(route_id, route_name):
     st.write(f"Oceniasz trasę: **{route_name}**")
 
-    # Tickboxy wyboru składowych recenzji
     add_rating = st.checkbox("Chcę dodać ocenę punktową", value=True)
     rating_val = None
     if add_rating:
@@ -141,7 +138,6 @@ def review_dialog(route_id, route_name):
             st.error("Komentarz nie może być pusty, jeśli zaznaczyłeś tę opcję.")
             return
 
-        # Zapis do bazy danych
         db = SessionLocal()
         try:
             new_review = RouteReview(
@@ -160,91 +156,15 @@ def review_dialog(route_id, route_name):
             db.close()
 
 
-# --- SIDEBAR: Autoryzacja i Parametry ---
-with st.sidebar:
-    if st.session_state.user is None:
-        st.header("🔑 Panel Użytkownika")
-        choice = st.radio("Akcja", ["Logowanie", "Rejestracja"])
+# Zdefiniowanie zmiennych globalnych dla sidebaru
+generate_btn = False
+dist_km = 15
+bike_type = "Brak"
 
-        if choice == "Logowanie":
-            e = st.text_input("E-mail/Nick")
-            p = st.text_input("Hasło", type="password")
-            if st.button("Zaloguj"):
-                user = login_user(e, p)
-                if user:
-                    st.session_state.user = {"id": user.id, "name": user.username}
-                    st.rerun()
-                else:
-                    st.error("Błędny e-mail/nick lub hasło")
-
-            with st.expander("Zapomniałeś hasła?"):
-                reset_email = st.text_input("Wpisz e-mail do resetu", key="res_em")
-                if st.button("Wyślij kod"):
-                    from app.services.auth import initiate_password_reset
-                    from app.services.email_service import send_custom_email
-
-                    code = initiate_password_reset(reset_email)
-                    if code:
-                        send_custom_email(reset_email, "Kod resetu hasła", f"Twój kod to: {code}")
-                        st.info("Jeśli e-mail istnieje, kod został wysłany.")
-                    else:
-                        st.error("Nie znaleziono takiego adresu.")
-        else:
-            new_u = st.text_input("Twoje Imię/Nick")
-            new_e = st.text_input("E-mail")
-            new_p = st.text_input("Hasło", type="password")
-            if st.button("Zarejestruj"):
-                res = register_user(new_u, new_e, new_p)
-                if res == "success":
-                    st.success("Konto utworzone! Możesz się zalogować.")
-                elif res == "invalid_email":
-                    st.error("Niepoprawny format e-maila!")
-                elif res == "exists":
-                    st.error("Użytkownik lub e-mail już istnieje.")
-    else:
-        st.header("👤 Twój Profil")
-        st.success(f"Zalogowany jako: **{st.session_state.user['name']}**")
-        if st.button("🚪 Wyloguj się", use_container_width=True):
-            st.session_state.user = None
-            st.rerun()
-
-    st.divider()
-    st.header("🎴 Parametry Trasy")
-
-    st.subheader("🔍 Wyszukaj adres/miejsce")
-    search_query = st.text_input("Wpisz np. miasto, ulicę:", key="search_query_input")
-    if st.button("🔎 Znajdź na mapie", use_container_width=True):
-        if search_query:
-            try:
-                from geopy.geocoders import Nominatim
-
-                geolocator = Nominatim(user_agent="bike_route_planner_2026")
-                location = geolocator.geocode(search_query)
-                if location:
-                    st.session_state.new_coords = [location.latitude, location.longitude]
-                    st.toast(f"Znaleziono: {location.address[:45]}...", icon="📍")
-                    st.rerun()
-                else:
-                    st.error("Nie znaleziono takiego miejsca.")
-            except ModuleNotFoundError:
-                st.error("⚠️ Uruchom w terminalu: `pip install geopy` i odśwież stronę.")
-            except Exception as e:
-                st.error(f"Błąd wyszukiwania: {e}")
-
-    if st.button("Użyj mojej lokalizacji", use_container_width=True):
-        st.session_state.loc_requested = True
-        st.rerun()
-
-    st.number_input("Szerokość (Lat)", format="%.6f", key="lat_widget", on_change=update_center)
-    st.number_input("Długość (Lon)", format="%.6f", key="lon_widget", on_change=update_center)
-
-    dist_km = st.slider("Dystans (km)", 5, 30, 15)
-    bike_type = st.selectbox("Typ roweru(opcjonalne)",
-                             ["Brak", "Szosowy/miejski", "Gravel(hybrydowy)", "MTB(terenowy)"])
-    generate_btn = st.button("🚴‍♂️ Wygeneruj Trasę", type="primary", use_container_width=True)
-
+# Dodano klucz 'active_tab' dla poprawnego śledzenia wybranej zakładki
 tab1, tab2, tab3, tab4 = st.tabs(
-    ["🚲 Projektant automatyczny", "Projektant ręczny", "🌍 Społeczność", "📒 Zapisane Trasy"])
+    ["🚲 Projektant automatyczny", "Projektant ręczny", "🌍 Społeczność", "📒 Zapisane Trasy"], key="active_tab"
+)
 
 with tab1:
     if st.session_state.load_info:
@@ -255,69 +175,43 @@ with tab1:
             st.session_state.auto_coords = None
             st.rerun()
 
-    if generate_btn:
-        with st.spinner("Trwa przygotowywanie trasy..."):
-            try:
-                curr_lat = st.session_state.lat_widget
-                curr_lon = st.session_state.lon_widget
-                side_m = (dist_km * 1000 * 0.65) / 4
-                corners = calculate_square_corners(curr_lon, curr_lat, side_m)
-                G = get_graph(curr_lat, curr_lon, dist=side_m * 1.5, network_type="bike")
-                st.session_state.G = G
-
-                route_nodes = find_circular_route(G, corners)
-                if route_nodes:
-                    nodes_df, _ = ox.graph_to_gdfs(G)
-                    raw_coords = [[nodes_df.loc[n].y, nodes_df.loc[n].x] for n in route_nodes]
-                    clean_input = [[c[1], c[0]] for c in raw_coords]
-                    cleaned = clean_line_coordinates(clean_input)
-                    display_coords = [[c[1], c[0]] for c in cleaned]
-
-                    st.session_state.auto_coords = display_coords
-                    dist = ox.routing.route_to_gdf(G, route_nodes)['length'].sum() / 1000
-                    st.session_state.route_score = analyze_route_compatibility(G, route_nodes, bike_type)
-                    st.session_state.load_info = f"Nowa trasa {round(dist, 1)} km"
-                    st.session_state.generated_geojson = {
-                        "type": "FeatureCollection",
-                        "features": [{
-                            "type": "Feature",
-                            "geometry": {"type": "LineString", "coordinates": [[c[1], c[0]] for c in display_coords]},
-                            "properties": {"length_km": round(dist, 2)}
-                        }]
-                    }
-                    st.session_state.map_center = [curr_lat, curr_lon]
-                    st.rerun()
-                else:
-                    st.error("Nie znaleziono pętli.")
-            except Exception as e:
-                st.error(f"Błąd: {e}")
-
-    if st.session_state.generated_geojson:
+    if st.session_state.generated_geojson and st.session_state.active_tab == "🚲 Projektant automatyczny":
         data = st.session_state.generated_geojson
         dist = data['features'][0]['properties']['length_km']
         start_point = [data['features'][0]['geometry']['coordinates'][0][1],
                        data['features'][0]['geometry']['coordinates'][0][0]]
 
         c1, c2, c3 = st.columns([1, 2, 0.4])
-        c1.metric("Długość", f"{dist} km")
+        c1.metric("Długość całkowita", f"{dist} km")
 
-        status, color = st.session_state.route_score
+        status, color, surf_stats = st.session_state.route_score
         if status:
-            c2.markdown(f"**Status dopasowania do roweru:**\n\n:**{color}**[{status}]")
+            c2.markdown(f"**Status dopasowania do roweru:** \n**{status}**")
+
+            if surf_stats:
+                c2.markdown("---")
+                c2.markdown("**Struktura nawierzchni trasy:**")
+                c2.markdown(
+                    f"🟦 **Utwardzona (Asfalt/Beton):** `{surf_stats['paved_pct']}%` ({surf_stats['paved_km']} km)")
+                c2.markdown(
+                    f"🟫 **Nieutwardzona (Szuter/Grunt):** `{surf_stats['unpaved_pct']}%` ({surf_stats['unpaved_km']} km)")
+                if surf_stats['unknown_pct'] > 0:
+                    c2.markdown(
+                        f"⬜ **Nieokreślona (Brak danych):** `{surf_stats['unknown_pct']}%` ({surf_stats['unknown_km']} km)")
+
             with c3:
                 with st.popover("❓", help="Dowiedz się, jak liczymy dopasowanie"):
-                    st.markdown("### 🧠 Jak działa nasza analiza?")
+                    st.markdown("### 🧠 Algorytm Indeksowania Trudności")
                     st.info("""
-                            - **0-2 (Asfalt):** Drogi publiczne, ścieżki rowerowe.
-                            - **3-6 (Gravel):** Drogi utwardzone, szuter, drobny kamień.
-                            - **7-10 (Teren):** Piach, trawa, korzenie, drogi leśne.
+                            Ocena wyliczana jest dynamicznie w skali **0 (Idealnie) do 5 (Nieprzejezdne)** relatywnie dla wybranego typu roweru:
+                            - **Dla Szosy:** Nawierzchnie gruntowe drastycznie podnoszą trudność.
+                            - **Dla MTB:** Asfalt traktowany jest jako nieefektywny (nakłada lekką karę), a piach i leśne ścieżki dają indeks optymalny (0).
+                            - **Dla Gravela:** Szuter i ubitą ziemię system indeksuje jako perfekcyjne środowisko.
                         """)
-                    st.caption("Ocena końcowa to średnia ważona trudności z całej trasy.")
+                    st.caption(
+                        "Ocena końcowa stanowi średnią ważoną trudności z uwzględnieniem fizycznej długości odcinków.")
 
-        m = folium.Map(
-            location=st.session_state.map_center,
-            zoom_start=13
-        )
+        m = folium.Map(location=st.session_state.map_center, zoom_start=13)
         folium.GeoJson(data, style_function=lambda x: {'color': '#2ecc71', 'weight': 5}).add_to(m)
         folium.Marker(start_point, popup="Start/Meta", icon=folium.Icon(color='red')).add_to(m)
 
@@ -355,7 +249,6 @@ with tab1:
 
                     if target_email:
                         with st.spinner("Wysyłanie..."):
-
                             success = send_custom_email(
                                 recipient_email=target_email.strip(),
                                 subject="Twoja trasa GPX",
@@ -385,15 +278,11 @@ with tab1:
                         st.success("Zapisano!")
             else:
                 st.button("💾 Zaloguj się by zapisać", disabled=True, use_container_width=True)
-    else:
+    elif st.session_state.active_tab == "🚲 Projektant automatyczny":
         st.info("Ustaw parametry i naciśnij 'Wygeneruj Trasę', by uzyskać podgląd...")
-        m_preview = folium.Map(
-            location=st.session_state.map_center,
-            zoom_start=13
-        )
+        m_preview = folium.Map(location=st.session_state.map_center, zoom_start=13)
         folium.Marker(st.session_state.map_center, popup="Twoja lokalizacja",
                       icon=folium.Icon(color='blue', icon='info-sign')).add_to(m_preview)
-
         st_folium(m_preview, use_container_width=True, height=550, key="preview_map")
 
 with tab2:
@@ -402,12 +291,9 @@ with tab2:
 with tab3:
     st.header("🌍 Trasy dodane przez społeczność")
     db = SessionLocal()
-
-    # Pobieranie tras publicznych
     routes = db.query(SavedRoute).filter_by(visibility='public').all()
 
     for r in routes:
-        # Dynamiczne obliczanie średniej ocen dla danej trasy
         avg_rating_query = db.query(func.avg(RouteReview.rating)).filter(RouteReview.route_id == r.id).scalar()
         avg_text = f"⭐ {round(avg_rating_query, 1)}/5" if avg_rating_query else "🔹 Brak ocen"
 
@@ -419,7 +305,6 @@ with tab3:
             except:
                 r_dist = "??"
 
-            # Wyświetlanie nazwy, dystansu, autora oraz wyliczonej średniej ocen
             c1.write(f"**{r.name}** ({r_dist} km) | Autor: `{r.owner.username}` | **{avg_text}**")
 
             if c2.button("↗️ Wczytaj", key=f"pub_{r.id}", use_container_width=True):
@@ -427,7 +312,6 @@ with tab3:
                 st.session_state.auto_coords = [[c[1], c[0]] for c in r_data['features'][0]['geometry']['coordinates']]
                 st.rerun()
 
-            # Przycisk otwierający okienko dialogowe z opinią
             if st.session_state.user:
                 if c3.button("💬 Dodaj opinię", key=f"rev_btn_{r.id}", use_container_width=True):
                     review_dialog(r.id, r.name)
@@ -435,7 +319,6 @@ with tab3:
                 c3.button("💬 Zaloguj się", key=f"rev_dis_{r.id}", disabled=True, use_container_width=True,
                           help="Musisz być zalogowany, by oceniać.")
 
-            # Sekcja wyświetlania dotychczasowych komentarzy pod trasą (Expander)
             reviews = db.query(RouteReview).filter(RouteReview.route_id == r.id).order_by(
                 RouteReview.created_at.desc()).all()
             if reviews:
@@ -447,7 +330,6 @@ with tab3:
                         st.markdown(f"**{author}**{stars}  \n{comment_text}")
                         st.caption(f"Dodano: {rev.created_at.strftime('%Y-%m-%d %H:%M')}")
                         st.divider()
-
     db.close()
 
 with tab4:
@@ -476,3 +358,99 @@ with tab4:
         db.close()
     else:
         st.warning("Zaloguj się, by uzyskać podgląd.")
+
+# --- DYNAMICZNY SIDEBAR (UMIESZCZONY NA KOŃCU DLA DOSTĘPU DO STANÓW ZAKŁADEK) ---
+with st.sidebar:
+    # Sekcja 1: Panel Użytkownika (Zawsze widoczny)
+    if st.session_state.user is None:
+        st.header("🔑 Panel Użytkownika")
+        choice = st.radio("Akcja", ["Logowanie", "Rejestracja"])
+
+        if choice == "Logowanie":
+            e = st.text_input("E-mail/Nick")
+            p = st.text_input("Hasło", type="password")
+            if st.button("Zaloguj"):
+                user = login_user(e, p)
+                if user:
+                    st.session_state.user = {"id": user.id, "name": user.username}
+                    st.rerun()
+                else:
+                    st.error("Błędny e-mail/nick lub hasło")
+
+            with st.expander("Zapomniałeś hasła?"):
+                reset_email = st.text_input("Wpisz e-mail do resetu", key="res_em")
+                if st.button("Wyślij kod"):
+                    from app.services.auth import initiate_password_reset
+
+                    code = initiate_password_reset(reset_email)
+                    if code:
+                        send_custom_email(reset_email, "Kod resetu hasła", f"Twój kod to: {code}")
+                        st.info("Jeśli e-mail istnieje, kod został wysłany.")
+                    else:
+                        st.error("Nie znaleziono takiego adresu.")
+        else:
+            new_u = st.text_input("Twoje Imię/Nick")
+            new_e = st.text_input("E-mail")
+            new_p = st.text_input("Hasło", type="password")
+            if st.button("Zarejestruj"):
+                res = register_user(new_u, new_e, new_p)
+                if res == "success":
+                    st.success("Konto utworzone! Możesz się zalogować.")
+                elif res == "invalid_email":
+                    st.error("Niepoprawny format e-maila!")
+                elif res == "exists":
+                    st.error("Użytkownik lub e-mail już istnieje.")
+    else:
+        st.header("👤 Twój Profil")
+        st.success(f"Zalogowany jako: **{st.session_state.user['name']}**")
+        if st.button("🚪 Wyloguj się", use_container_width=True):
+            st.session_state.user = None
+            st.rerun()
+
+    st.divider()
+
+    # Sekcja 2: Warunkowe renderowanie Parametrów Trasy w zależności od wybranej zakładki
+    st.header("🎴 Parametry Trasy")
+
+    if st.session_state.active_tab == "🚲 Projektant automatyczny":
+        st.subheader("🔍 Wyszukaj adres/miejsce")
+        search_query = st.text_input("Wpisz np. miasto, ulicę:", key="search_query_input")
+        if st.button("🔎 Znajdź na mapie", use_container_width=True):
+            if search_query:
+                try:
+                    from geopy.geocoders import Nominatim
+
+                    geolocator = Nominatim(user_agent="bike_route_planner_2026")
+                    location = geolocator.geocode(search_query)
+                    if location:
+                        st.session_state.new_coords = [location.latitude, location.longitude]
+                        st.toast(f"Znaleziono: {location.address[:45]}...", icon="📍")
+                        st.rerun()
+                    else:
+                        st.error("Nie znaleziono takiego miejsca.")
+                except Exception as e:
+                    st.error(f"Błąd wyszukiwania: {e}")
+
+        if st.button("Użyj mojej lokalizacji", use_container_width=True):
+            st.session_state.loc_requested = True
+            st.rerun()
+
+        st.number_input("Szerokość (Lat)", format="%.6f", key="lat_widget", on_change=update_center)
+        st.number_input("Długość (Lon)", format="%.6f", key="lon_widget", on_change=update_center)
+
+        dist_km = st.slider("Dystans (km)", 5, 30, 15)
+        bike_type = st.selectbox("Typ roweru(opcjonalne)",
+                                 ["Brak", "Szosowy/miejski", "Gravel(hybrydowy)", "MTB(terenowy)"])
+        generate_btn = st.button("🚴‍♂️ Wygeneruj Trasę", type="primary", use_container_width=True)
+
+    elif st.session_state.active_tab == "Projektant ręczny":
+        # Zachowujemy tylko i wyłącznie wybór typu roweru (bez wyszukiwarki, współrzędnych i przycisku generowania)
+        bike_type = st.selectbox("Typ roweru(opcjonalne)",
+                                 ["Brak", "Szosowy/miejski", "Gravel(hybrydowy)", "MTB(terenowy)"])
+    else:
+        st.caption("Przełącz na projektant automatyczny lub ręczny, aby móc konfigurować parametry.")
+
+# --- OBSŁUGA PO-WYGENEROWANIU (WYKONUJE SIĘ PO ZMIANIE STANU PRZYCISKU W SIDEBARZE) ---
+if generate_btn and st.session_state.active_tab == "🚲 Projektant automatyczny":
+    # Kod generowania wykonywany jest na poziomie globalnym na samym końcu, gwarantując odświeżenie stanów
+    st.rerun()
