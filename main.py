@@ -61,9 +61,11 @@ st.markdown("""
             font-weight: 500 !important;
         }
 
-        /* 3. GLOBALNE TŁO I TYPOGRAFIA (ZAKŁADKI / GŁÓWNY WIDOK) */
+        /* 3. CUSTOMOWE TŁO APLIKACJI I TYPOGRAFIA (ZAKŁADKI / GŁÓWNY WIDOK) */
         .stApp { 
-            background-color: #000000 !important;        /* Czarne tło aplikacji */
+            /* Płynny gradient radialny (efekt poświaty od lewego górnego rogu w stronę mroku) */
+            background: radial-gradient(circle at 10% 10%, #061f0b 0%, #0d130e 50%, #000000 100%) !important;
+            background-attachment: fixed !important;
         }
 
         /* Główne nagłówki (st.title, st.header, st.subheader) */
