@@ -1,0 +1,11 @@
+/* style.css */
+[data-testid="stSidebar"] {
+    background-color: #1e293b !important; /* Ciemne, nowoczesne tło */
+    border-right: 2px solid #3b82f6 !important; /* Niebieska ramka */
+    border-radius: 0px 20px 20px 0px; /* Zaokrąglone rogi */
+}
+
+/* Stylizowanie przycisków wewnątrz sidebaru, aby pasowały do nowego stylu */
+[data-testid="stSidebar"] button {
+    border-radius: 10px !important;
+}
