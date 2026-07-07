@@ -1,28 +1,28 @@
-import streamlit as st
-import osmnx as ox
-import networkx as nx
-import folium
-from streamlit_folium import st_folium
+import base64
 import json
 import math
-from typing import List, Tuple
-from streamlit_js_eval import get_geolocation
 from datetime import datetime
-import qrcode
 from io import BytesIO
-from sqlalchemy import Column, Integer, String, ForeignKey, DateTime, func
+from typing import List, Tuple
+
+import folium
+import networkx as nx
+import osmnx as ox
+import qrcode
+import streamlit as st
+from sqlalchemy import Column, DateTime, ForeignKey, Integer, String, func
 from sqlalchemy.orm import relationship
+from streamlit_folium import st_folium
+from streamlit_js_eval import get_geolocation
 
 # Importy z plików lokalnych
-from app.db.database import engine, Base, User, SavedRoute, RouteReview
-from app.db.database import SessionLocal
-from app.utils.geo_utils import calculate_square_corners, create_gpx
-from app.services.route_service import find_circular_route, clean_line_coordinates
-from app.services.route_service import get_graph
-from app.services.route_analysis_service import analyze_route_compatibility
-from app.services.manual_designer import show_manual_designer
+from app.db.database import RouteReview, SavedRoute, SessionLocal, User, Base, engine
 from app.services.auth import login_user, register_user
 from app.services.email_service import send_custom_email
+from app.services.manual_designer import show_manual_designer
+from app.services.route_analysis_service import analyze_route_compatibility
+from app.services.route_service import clean_line_coordinates, find_circular_route, get_graph
+from app.utils.geo_utils import calculate_square_corners, create_gpx
 
 # Automatyczne utworzenie tabeli w NeonDB przy starcie aplikacji
 Base.metadata.create_all(bind=engine)
@@ -39,125 +39,171 @@ st.set_page_config(
     }
 )
 
-st.markdown("""
+# 1. ŚCIEŻKI DO TWOICH OBRAZKÓW
+MAIN_BG_PATH = "C:/Users/pawel/Downloads/automatyczny.png"
+SIDEBAR_BG_PATH = "C:/Users/pawel/Downloads/sidebar.png"
+LOGO_PATH = "C:/Users/pawel/Downloads/logo.png"
+
+# 2. AUTOMATYCZNA KONWERSJA OBRAZKA GŁÓWNEGO DO BASE64
+try:
+    with open(MAIN_BG_PATH, "rb") as image_file:
+        encoded_main = base64.b64encode(image_file.read()).decode()
+    main_bg_css = f"url(data:image/png;base64,{encoded_main})"
+except FileNotFoundError:
+    main_bg_css = "radial-gradient(circle at 10% 10%, #061f0b 0%, #0d130e 50%, #000000 100%)"
+
+# 3. AUTOMATYCZNA KONWERSJA OBRAZKA SIDEBARA DO BASE64
+try:
+    with open(SIDEBAR_BG_PATH, "rb") as image_file:
+        encoded_sidebar = base64.b64encode(image_file.read()).decode()
+    sidebar_bg_css = f"url(data:image/png;base64,{encoded_sidebar})"
+except FileNotFoundError:
+    sidebar_bg_css = "none"
+
+# 4. AUTOMATYCZNA KONWERSJA LOGO DO BASE64
+try:
+    with open(LOGO_PATH, "rb") as image_file:
+        encoded_logo = base64.b64encode(image_file.read()).decode()
+    logo_css = f"url(data:image/png;base64,{encoded_logo})"
+except FileNotFoundError:
+    logo_css = "none"
+
+# 5. WSTRZYKNIĘCIE KODU CSS Z NOWYM HEADEREM I LOGO
+st.markdown(f"""
     <style>
-        /* 1. UKRYWANIE ELEMENTÓW SYSTEMOWYCH */
-        .stAppDeployButton { display:none !important; }
-        #MainMenu { visibility: hidden; }
-        footer { visibility: hidden; }
-        div[data-testid="stStatusWidget"] { visibility: hidden; }
+        /* 1. UKRYWANIE ELEMENTÓW SYSTEMOWYCH I WSTRZYKIWANIE LOGO W HEADER */
+        .stAppDeployButton {{ display:none !important; }}
+        #MainMenu {{ visibility: hidden; }}
+        footer {{ visibility: hidden; }}
+        div[data-testid="stStatusWidget"] {{ visibility: hidden; }}
+
+        /* Przekształcenie czarnego paska w przestrzeń na logo */
+        [data-testid="stHeader"] {{
+            background-color: transparent !important;
+            background-image: {logo_css} !important;
+            background-repeat: no-repeat !important;
+            background-size: 180px auto !important;
+            background-position: right 40px center !important;
+            height: 100px !important;
+        }}
+
+        [data-testid="stAppViewBlockContainer"] {{
+            padding-top: 110px !important;
+        }}
 
         /* 2. STYLIZACJA SIDEBARU */
-        [data-testid="stSidebar"] { 
-            background-color: #0b3d16 !important;       /* Głęboka, nowoczesna zieleń */
-            border-right: 3px solid #cccc99 !important;   /* Beżowo-złota ramka */
-            border-radius: 0px 20px 20px 0px;            /* Zaokrąglenie prawych rogów */
-        }
+        [data-testid="stSidebar"] {{ 
+            background: linear-gradient(180deg, rgba(11, 61, 22, 0.85) 0%, rgba(5, 30, 11, 0.95) 100%), {sidebar_bg_css} !important;
+            background-size: cover !important;
+            background-position: center !important;
+            border-right: 3px solid #cccc99 !important;
+            border-radius: 0px 20px 20px 0px;
+        }}
 
-        /* Teksty i etykiety wewnątrz sidebaru */
         [data-testid="stSidebar"] .stMarkdown p, 
-        [data-testid="stSidebar"] label {
+        [data-testid="stSidebar"] label {{
             color: #ffffff !important;
             font-weight: 500 !important;
-        }
+            text-shadow: 1px 1px 3px rgba(0, 0, 0, 0.8);
+        }}
 
-        /* 3. CUSTOMOWE TŁO APLIKACJI I TYPOGRAFIA (ZAKŁADKI / GŁÓWNY WIDOK) */
-        .stApp { 
-            /* Płynny gradient radialny (efekt poświaty od lewego górnego rogu w stronę mroku) */
-            background: radial-gradient(circle at 10% 10%, #061f0b 0%, #0d130e 50%, #000000 100%) !important;
+        /* 3. NOWE UKRYTE TŁO APLIKACJI */
+        .stApp {{ 
+            background: linear-gradient(rgba(0, 0, 0, 0.65), rgba(0, 0, 0, 0.85)), {main_bg_css} !important;
+            background-size: cover !important;
+            background-position: center !important;
             background-attachment: fixed !important;
-        }
+        }}
 
-        /* Główne nagłówki (st.title, st.header, st.subheader) */
-        h1, h2, h3 {
-            color: #cccc99 !important;                   /* Beżowo-złoty kolor nagłówków */
+        h1, h2, h3 {{
+            color: #cccc99 !important;                   
             font-family: 'Helvetica Neue', sans-serif !important;
             padding-bottom: 8px;
-        }
+            text-shadow: 1px 1px 4px rgba(0, 0, 0, 0.8); 
+        }}
 
-        /* Zwykły tekst na zakładkach (st.write, opisy itp.) */
-        .stMarkdown p {
-            color: #e2e8f0 !important;                   /* Jasnoszary, wysoce czytelny tekst */
+        .stMarkdown p {{
+            color: #e2e8f0 !important;                   
             font-size: 15px !important;
-        }
+            text-shadow: 1px 1px 3px rgba(0, 0, 0, 0.9);
+        }}
 
-        /* 4. STYLIZACJA PRZYCISKÓW (st.button) NA ZAKŁADKACH */
-        div.stButton > button {
-            background-color: #166534 !important;        /* Ciemnozielone tło przycisków */
-            color: #ffffff !important;                   /* Biały tekst */
-            border: 1px solid #cccc99 !important;        /* Beżowa ramka spójna z aplikacją */
-            border-radius: 8px !important;               /* Zaokrąglone rogi przycisku */
+        /* 4. STYLIZACJA PRZYCISKÓW */
+        div.stButton > button {{
+            background-color: #166534 !important;        
+            color: #ffffff !important;                   
+            border: 1px solid #cccc99 !important;        
+            border-radius: 8px !important;               
             padding: 8px 16px !important;
             font-weight: 600 !important;
-            transition: all 0.3s ease !important;        /* Płynna animacja najechania */
-        }
+            transition: all 0.3s ease !important;        
+        }}
 
-        /* Efekt po najechaniu na przycisk (Hover) */
-        div.stButton > button:hover {
-            background-color: #cccc99 !important;        /* Złotawo-beżowe tło */
-            color: #000000 !important;                   /* Czarny tekst */
+        div.stButton > button:hover {{
+            background-color: #cccc99 !important;        
+            color: #000000 !important;                   
             border-color: #ffffff !important;
             box-shadow: 0px 4px 12px rgba(204, 204, 153, 0.3) !important;
-        }
+        }}
 
-        /* Przycisk typu 'primary' (np. wyznaczanie trasy) - wyróżnienie */
-        div.stButton > button[data-testid="stBaseButton-primary"] {
+        div.stButton > button[data-testid="stBaseButton-primary"] {{
             background-color: #cccc99 !important;
             color: #000000 !important;
-        }
-        div.stButton > button[data-testid="stBaseButton-primary"]:hover {
+        }}
+        div.stButton > button[data-testid="stBaseButton-primary"]:hover {{
             background-color: #ffffff !important;
             box-shadow: 0px 4px 15px rgba(255, 255, 255, 0.4) !important;
-        }
+        }}
 
-        /* 5. NAGŁÓWKI ZAKŁADEK (st.tabs) - JEŚLI SĄ UŻYWANE */
-        button[data-baseweb="tab"] {
-            color: #888888 !important;                   /* Szare nieaktywne zakładki */
+        /* 5. NAGŁÓWKI ZAKŁADEK */
+        button[data-baseweb="tab"] {{
+            color: #cccc99cc !important;                 
             font-size: 16px !important;
             font-weight: 500 !important;
             transition: color 0.2s ease !important;
-        }
-        button[data-baseweb="tab"][aria-selected="true"] {
-            color: #cccc99 !important;                   /* Aktywna zakładka w kolorze beżowo-złotym */
-            border-bottom-color: #cccc99 !important;     /* Podkreślenie aktywnej zakładki */
+            background: rgba(0, 0, 0, 0.4) !important;   
+            border-radius: 4px 4px 0 0;
+            padding: 4px 12px !important;
+        }}
+        button[data-baseweb="tab"][aria-selected="true"] {{
+            color: #cccc99 !important;                   
+            border-bottom-color: #cccc99 !important;     
             font-weight: bold !important;
-        }
+            background: rgba(0, 0, 0, 0.7) !important;
+        }}
 
-        /* 6. POLA WPROWADZANIA TEKSTU (st.text_input / wyszukiwarki) */
-        div[data-testid="stTextInput"] input {
-            background-color: #1a1a1a !important;        /* Bardzo ciemne tło pól tekstowych */
-            color: #ffffff !important;                   /* Biały wpisywany tekst */
-            border: 1px solid #444444 !important;        /* Ciemnoszara dyskretna ramka */
+        /* 6. POLA WPROWADZANIA TEKSTU */
+        div[data-testid="stTextInput"] input {{
+            background-color: #1a1a1a !important;        
+            color: #ffffff !important;                   
+            border: 1px solid #444444 !important;        
             border-radius: 8px !important;
             transition: border-color 0.2s !important;
-        }
-        /* Aktywne/kliknięte pole tekstowe */
-        div[data-testid="stTextInput"] input:focus {
-            border-color: #cccc99 !important;            /* Ramka zmienia kolor na beżowo-złoty */
+        }}
+        div[data-testid="stTextInput"] input:focus {{
+            border-color: #cccc99 !important;            
             box-shadow: 0 0 0 1px #cccc99 !important;
-        }
+        }}
 
-        /* 7. TWOJE DOTYCHCHASOWE STYLE KONTENERÓW */
-        /* Kontenery blokowe */
-        div[data-testid="stVerticalBlockBorderWrapper"] { 
+        /* 7. KONTENERY */
+        div[data-testid="stVerticalBlockBorderWrapper"] {{ 
             border: 1px solid #e0e0e0 !important; 
             border-radius: 10px !important; 
             padding: 10px !important; 
-            background-color: #ffffff !important;         /* Białe tło dla wyznaczonych bloków danych */
-        }
-        /* Etykiety i teksty wewnątrz białych bloków, by były czytelne na jasnym tle */
+            background-color: #ffffff !important;         
+        }}
         div[data-testid="stVerticalBlockBorderWrapper"] .stMarkdown p,
         div[data-testid="stVerticalBlockBorderWrapper"] h1,
         div[data-testid="stVerticalBlockBorderWrapper"] h2,
-        div[data-testid="stVerticalBlockBorderWrapper"] h3 {
+        div[data-testid="stVerticalBlockBorderWrapper"] h3 {{
             color: #1a1a1a !important;
-        }
+            text-shadow: none !important;
+        }}
 
-        /* Rozwijane kontenery (st.expander) */
-        .stElementContainer div[data-testid="stExpander"] { 
+        .stElementContainer div[data-testid="stExpander"] {{ 
             border: 1px solid #ffcc00 !important; 
-            background-color: #111111 !important;        /* Ciemne tło wewnątrz expandera */
-        }
+            background-color: rgba(17, 17, 17, 0.85) !important; 
+        }}
     </style>
 """, unsafe_allow_html=True)
 
@@ -168,22 +214,37 @@ if 'map_center' not in st.session_state: st.session_state.map_center = [50.2859,
 if 'load_info' not in st.session_state: st.session_state.load_info = None
 if 'route_score' not in st.session_state: st.session_state.route_score = (None, None, None)
 if 'loc_requested' not in st.session_state: st.session_state.loc_requested = False
+if 'show_load_toast' not in st.session_state: st.session_state.show_load_toast = False # <--- DODANO FLAGĘ TOASTA
 
-# --- MECHANIZM AKTUALIZACJI WSPÓŁRZĘDNYCH ---
+# WYŚWIETLENIE POP-UPA (TOAST) JEŚLI FLAGA JEST AKTYWNA
+if st.session_state.show_load_toast:
+    st.toast("Trasa została wczytana na projektant automatyczny", icon="✅")
+    st.session_state.show_load_toast = False # Wyzerowanie po wyświetleniu
+
+# --- SYSTEM TRWAŁEGO ZAPISU WSPÓŁRZĘDNYCH ---
+if 'permanent_lat' not in st.session_state: st.session_state.permanent_lat = st.session_state.map_center[0]
+if 'permanent_lon' not in st.session_state: st.session_state.permanent_lon = st.session_state.map_center[1]
+
+# Reakcja na przesunięcie mapy/wczytanie z bazy
 if 'new_coords' in st.session_state:
+    st.session_state.map_center = st.session_state.new_coords
+    st.session_state.permanent_lat = st.session_state.new_coords[0]
+    st.session_state.permanent_lon = st.session_state.new_coords[1]
     st.session_state.lat_widget = st.session_state.new_coords[0]
     st.session_state.lon_widget = st.session_state.new_coords[1]
-    st.session_state.map_center = st.session_state.new_coords
     del st.session_state.new_coords
-
-if 'lat_widget' not in st.session_state: st.session_state.lat_widget = st.session_state.map_center[0]
-if 'lon_widget' not in st.session_state: st.session_state.lon_widget = st.session_state.map_center[1]
 
 # --- OBSŁUGA GPS W TLE ---
 if st.session_state.loc_requested:
     loc_data = get_geolocation()
     if loc_data:
-        st.session_state.new_coords = [loc_data['coords']['latitude'], loc_data['coords']['longitude']]
+        lat = loc_data['coords']['latitude']
+        lon = loc_data['coords']['longitude']
+        st.session_state.map_center = [lat, lon]
+        st.session_state.permanent_lat = lat
+        st.session_state.permanent_lon = lon
+        st.session_state.lat_widget = lat
+        st.session_state.lon_widget = lon
         st.session_state.loc_requested = False
         st.rerun()
 
@@ -193,10 +254,17 @@ def load_route_action(geojson_data, name):
     st.session_state.generated_geojson = data
     st.session_state.load_info = name
     first_coord = data['features'][0]['geometry']['coordinates'][0]
-    st.session_state.new_coords = [first_coord[1], first_coord[0]]
+    st.session_state.map_center = [first_coord[1], first_coord[0]]
+    st.session_state.permanent_lat = first_coord[1]
+    st.session_state.permanent_lon = first_coord[0]
+    st.session_state.lat_widget = first_coord[1]
+    st.session_state.lon_widget = first_coord[0]
+    st.session_state.show_load_toast = True # <--- WŁĄCZENIE FLAGI PO ZAŁADOWANIU
 
 
 def update_center():
+    st.session_state.permanent_lat = st.session_state.lat_widget
+    st.session_state.permanent_lon = st.session_state.lon_widget
     st.session_state.map_center = [st.session_state.lat_widget, st.session_state.lon_widget]
 
 
@@ -245,7 +313,7 @@ def review_dialog(route_id, route_name):
 
 
 # =========================================================================
-# KROK 1: WYBÓR TRYBU (Niezawodna kontrola segmentowa)
+# KROK 1: WYBÓR TRYBU
 # =========================================================================
 active_tab = st.segmented_control(
     "Wybierz tryb projektowania:",
@@ -260,7 +328,7 @@ dist_km = 15
 bike_type = "Brak"
 
 # =========================================================================
-# KROK 2: SIDEBAR (Budowany reaktywnie bez lagów)
+# KROK 2: SIDEBAR
 # =========================================================================
 with st.sidebar:
     if st.session_state.user is None:
@@ -314,25 +382,48 @@ with st.sidebar:
     if active_tab == "🚲 Projektant automatyczny":
         st.subheader("🔍 Wyszukaj adres/miejsce")
         search_query = st.text_input("Wpisz np. miasto, ulicę:", key="search_query_input")
+
         if st.button("🔎 Znajdź na mapie", use_container_width=True):
             if search_query:
-                try:
-                    from geopy.geocoders import Nominatim
+                with st.spinner("Szukanie..."):
+                    try:
+                        from geopy.geocoders import Nominatim
 
-                    geolocator = Nominatim(user_agent="bike_route_planner_2026")
-                    location = geolocator.geocode(search_query)
-                    if location:
-                        st.session_state.new_coords = [location.latitude, location.longitude]
-                        st.toast(f"Znaleziono: {location.address[:45]}...", icon="📍")
-                        st.rerun()
-                    else:
-                        st.error("Nie znaleziono takiego miejsca.")
-                except Exception as e:
-                    st.error(f"Błąd wyszukiwania: {e}")
+                        geolocator = Nominatim(user_agent="bike_route_planner_2026")
+                        location = geolocator.geocode(search_query)
+                        if location:
+                            st.session_state.permanent_lat = location.latitude
+                            st.session_state.permanent_lon = location.longitude
+                            st.session_state.map_center = [location.latitude, location.longitude]
+                            st.session_state.lat_widget = location.latitude
+                            st.session_state.lon_widget = location.longitude
+                            st.session_state.search_address = location.address
+                            st.toast(f"Znaleziono: {location.address[:45]}...", icon="📍")
+                            st.rerun()
+                        else:
+                            st.session_state.search_address = None
+                            st.error("Nie znaleziono takiego miejsca.")
+                    except Exception as e:
+                        st.error(f"Błąd wyszukiwania: {e}")
+
+        if 'search_address' in st.session_state and st.session_state.search_address:
+            st.markdown(
+                f"""
+                    <div style="background-color: rgba(204, 204, 153, 0.15); padding: 10px; border-radius: 8px; border: 1px solid #cccc99; margin-top: -10px; margin-bottom: 15px;">
+                        <span style="color: #cccc99; font-size: 13px; font-weight: bold;">📍 Aktywny punkt startowy:</span><br>
+                        <span style="color: #ffffff; font-size: 13px;">{st.session_state.search_address}</span>
+                    </div>
+                    """,
+                unsafe_allow_html=True
+            )
 
         if st.button("Użyj mojej lokalizacji", use_container_width=True):
             st.session_state.loc_requested = True
+            st.session_state.search_address = "📍 Twoja bieżąca lokalizacja (GPS)"
             st.rerun()
+
+        if 'lat_widget' not in st.session_state: st.session_state.lat_widget = st.session_state.permanent_lat
+        if 'lon_widget' not in st.session_state: st.session_state.lon_widget = st.session_state.permanent_lon
 
         st.number_input("Szerokość (Lat)", format="%.6f", key="lat_widget", on_change=update_center)
         st.number_input("Długość (Lon)", format="%.6f", key="lon_widget", on_change=update_center)
@@ -360,13 +451,15 @@ if active_tab == "🚲 Projektant automatyczny":
             st.session_state.generated_geojson = None
             st.session_state.load_info = None
             st.session_state.auto_coords = None
+            st.session_state.search_address = None
+            st.session_state.route_score = (None, None, None)
             st.rerun()
 
     if generate_btn:
         with st.spinner("Trwa przygotowywanie trasy..."):
             try:
-                curr_lat = st.session_state.lat_widget
-                curr_lon = st.session_state.lon_widget
+                curr_lat = st.session_state.permanent_lat
+                curr_lon = st.session_state.permanent_lon
                 side_m = (dist_km * 1000 * 0.65) / 4
                 corners = calculate_square_corners(curr_lon, curr_lat, side_m)
                 G = get_graph(curr_lat, curr_lon, dist=side_m * 1.5, network_type="bike")
@@ -412,18 +505,21 @@ if active_tab == "🚲 Projektant automatyczny":
         c1.metric("Długość całkowita", f"{dist} km")
 
         status, color, surf_stats = st.session_state.route_score
-        if status:
-            c2.markdown(f"**Status dopasowania do roweru:** \n**{status}**")
+
+        with c2:
+            if bike_type != "Brak" and status:
+                st.markdown(f"**Status dopasowania do roweru:** \n**{status}**")
+                st.markdown("---")
+
             if surf_stats:
-                c2.markdown("---")
-                c2.markdown("**Struktura nawierzchni trasy:**")
-                c2.markdown(
-                    f"🟦 **Utwardzona (Asfalt/Beton):** `{surf_stats['paved_pct']}%` ({surf_stats['paved_km']} km)")
-                c2.markdown(
-                    f"🟫 **Nieutwardzona (Szuter/Grunt):** `{surf_stats['unpaved_pct']}%` ({surf_stats['unpaved_km']} km)")
-                if surf_stats['unknown_pct'] > 0:
-                    c2.markdown(
-                        f"⬜ **Nieokreślona (Brak danych):** `{surf_stats['unknown_pct']}%` ({surf_stats['unknown_km']} km)")
+                st.markdown("**Struktura nawierzchni trasy:**")
+                st.markdown(
+                    f"🟦 **Utwardzona (Asfalt/Beton):** `{surf_stats.get('paved_pct', 0)}%` ({surf_stats.get('paved_km', 0)} km)")
+                st.markdown(
+                    f"🟫 **Nieutwardzona (Szuter/Grunt):** `{surf_stats.get('unpaved_pct', 0)}%` ({surf_stats.get('unpaved_km', 0)} km)")
+                if surf_stats.get('unknown_pct', 0) > 0:
+                    st.markdown(
+                        f"⬜ **Nieokreślona (Brak danych):** `{surf_stats.get('unknown_pct', 0)}%` ({surf_stats.get('unknown_km', 0)} km)")
 
         with c3:
             with st.popover("❓", help="Dowiedz się, jak liczymy dopasowanie"):
@@ -458,7 +554,8 @@ if active_tab == "🚲 Projektant automatyczny":
                         curr_user = db.get(User, st.session_state.user['id'])
                         target_email = curr_user.email if curr_user else None
                     except Exception as e:
-                        st.error(f"Błąd bazy danych: {e}"); target_email = None
+                        st.error(f"Błąd bazy danych: {e}");
+                        target_email = None
                     finally:
                         db.close()
 
@@ -497,6 +594,25 @@ if active_tab == "🚲 Projektant automatyczny":
 
 elif active_tab == "Projektant ręczny":
     show_manual_designer(bike_type)
+
+    if st.session_state.generated_geojson and 'route_score' in st.session_state:
+        status, color, surf_stats = st.session_state.route_score
+        if surf_stats:
+            st.markdown("---")
+            c1, c2 = st.columns([1, 3])
+            with c1:
+                if bike_type != "Brak" and status:
+                    st.markdown(f"**Dopasowanie:**\n{status}")
+            with c2:
+                st.markdown("**Struktura nawierzchni trasy:**")
+                cols = st.columns(3)
+                cols[0].markdown(
+                    f"🟦 **Utwardzona:** `{surf_stats.get('paved_pct', 0)}%` ({surf_stats.get('paved_km', 0)} km)")
+                cols[1].markdown(
+                    f"🟫 **Nieutwardzona:** `{surf_stats.get('unpaved_pct', 0)}%` ({surf_stats.get('unpaved_km', 0)} km)")
+                if surf_stats.get('unknown_pct', 0) > 0:
+                    cols[2].markdown(
+                        f"⬜ **Nieokreślona:** `{surf_stats.get('unknown_pct', 0)}%` ({surf_stats.get('unknown_km', 0)} km)")
 
 elif active_tab == "🌍 Społeczność":
     st.header("🌍 Trasy dodane przez społeczność")

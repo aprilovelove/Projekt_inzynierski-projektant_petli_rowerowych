@@ -72,12 +72,9 @@ def get_edge_difficulty(edge_data, bike_type):
 
 def analyze_route_compatibility(G, route_nodes, bike_type):
     """
-    Analizuje trasę pod kątem wybranego roweru, wyliczając trudność jako średnią ważoną
-    długością odcinków, zapobiegając fałszowaniu wyników przez mikro-krawędzie.
+    Analizuje trasę pod kątem wybranego roweru (jeśli podano) i zawsze zwraca
+    statystyki nawierzchniowe dla trasy.
     """
-    if not bike_type or bike_type == "Brak":
-        return None, None, None
-
     edges = ox.routing.route_to_gdf(G, route_nodes)
 
     weighted_score_sum = 0
@@ -88,19 +85,23 @@ def analyze_route_compatibility(G, route_nodes, bike_type):
     unpaved_length = 0
     unknown_length = 0
 
+    # Flaga sprawdzająca czy użytkownik wybrał konkretny typ roweru
+    has_bike_type = bike_type and bike_type != "Brak"
+
     for _, row in edges.iterrows():
         edge_len = row.get('length', 0)
         if edge_len <= 0:
             continue
 
-        difficulty = get_edge_difficulty(row, bike_type)
-
-        # ŚREDNIA WAŻONA: Trudność mnożona przez metry bieżące odcinka
-        weighted_score_sum += (difficulty * edge_len)
         total_route_length_m += edge_len
         valid_edges += 1
 
-        # Agregacja nawierzchni
+        # Obliczanie trudności tylko, jeśli wybrano typ roweru
+        if has_bike_type:
+            difficulty = get_edge_difficulty(row, bike_type)
+            weighted_score_sum += (difficulty * edge_len)
+
+        # Agregacja nawierzchni (wykonywana ZAWSZE)
         surface = row.get('surface', '')
         if any(s in ['asphalt', 'concrete', 'paved', 'paving_stones'] for s in
                ([surface] if isinstance(surface, str) else surface)):
@@ -121,11 +122,7 @@ def analyze_route_compatibility(G, route_nodes, bike_type):
     if valid_edges == 0 or total_route_length_m == 0:
         return "Brak danych do analizy", "gray", None
 
-    # Wyznaczenie średniej ważonej zamiast arytmetycznej
-    avg_score = weighted_score_sum / total_route_length_m
-    profile = BIKE_PROFILES[bike_type]
-
-    # Obliczanie końcowych statystyk procentowych
+    # Obliczanie końcowych statystyk procentowych nawierzchni
     surface_stats = {
         "paved_pct": round((paved_length / total_route_length_m) * 100),
         "unpaved_pct": round((unpaved_length / total_route_length_m) * 100),
@@ -135,7 +132,14 @@ def analyze_route_compatibility(G, route_nodes, bike_type):
         "unknown_km": round(unknown_length / 1000, 1)
     }
 
-    # Wyznaczenie statusu dopasowania
+    # Jeśli nie podano typu roweru, zwracamy tylko statystyki nawierzchni bez rekomendacji
+    if not has_bike_type:
+        return None, None, surface_stats
+
+    # Wyznaczenie statusu dopasowania (jeśli wybrano typ roweru)
+    avg_score = weighted_score_sum / total_route_length_m
+    profile = BIKE_PROFILES[bike_type]
+
     if avg_score <= profile["max_perfect"]:
         status_text = f"🟢 Idealna dla: {bike_type.split('/')[0].split('(')[0]} (Indeks: {round(avg_score, 1)})"
         color = "green"
