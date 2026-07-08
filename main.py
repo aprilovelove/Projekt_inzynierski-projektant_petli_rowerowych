@@ -40,9 +40,9 @@ st.set_page_config(
 )
 
 # 1. ŚCIEŻKI DO TWOICH OBRAZKÓW
-MAIN_BG_PATH = "C:/Users/pawel/Downloads/automatyczny.png"
-SIDEBAR_BG_PATH = "C:/Users/pawel/Downloads/sidebar.png"
-LOGO_PATH = "C:/Users/pawel/Downloads/logo.png"
+MAIN_BG_PATH = "app/images/automatyczny.png"
+SIDEBAR_BG_PATH = "app/images/sidebar.png"
+LOGO_PATH = "app/images/logo.png"
 
 # 2. AUTOMATYCZNA KONWERSJA OBRAZKA GŁÓWNEGO DO BASE64
 try:
@@ -71,6 +71,14 @@ except FileNotFoundError:
 # 5. WSTRZYKNIĘCIE KODU CSS Z NOWYM HEADEREM I LOGO
 st.markdown(f"""
     <style>
+        @import url('https://fonts.googleapis.com/css2?family=Lexend:wght@300;400;500;600;700&display=swap');
+
+/* Wymuszenie czcionki Lexend z wyłączeniem ikon systemowych Streamlita */
+        html, body, [data-testid="stAppViewContainer"], 
+        *:not(i):not(svg):not(span[data-testid="stIconMaterial"]):not(.material-icons) {{
+        font-family: 'Lexend', sans-serif !important;
+}}
+        
         /* 1. UKRYWANIE ELEMENTÓW SYSTEMOWYCH I WSTRZYKIWANIE LOGO W HEADER */
         .stAppDeployButton {{ display:none !important; }}
         #MainMenu {{ visibility: hidden; }}
@@ -214,12 +222,12 @@ if 'map_center' not in st.session_state: st.session_state.map_center = [50.2859,
 if 'load_info' not in st.session_state: st.session_state.load_info = None
 if 'route_score' not in st.session_state: st.session_state.route_score = (None, None, None)
 if 'loc_requested' not in st.session_state: st.session_state.loc_requested = False
-if 'show_load_toast' not in st.session_state: st.session_state.show_load_toast = False # <--- DODANO FLAGĘ TOASTA
+if 'show_load_toast' not in st.session_state: st.session_state.show_load_toast = False
 
 # WYŚWIETLENIE POP-UPA (TOAST) JEŚLI FLAGA JEST AKTYWNA
 if st.session_state.show_load_toast:
     st.toast("Trasa została wczytana na projektant automatyczny", icon="✅")
-    st.session_state.show_load_toast = False # Wyzerowanie po wyświetleniu
+    st.session_state.show_load_toast = False
 
 # --- SYSTEM TRWAŁEGO ZAPISU WSPÓŁRZĘDNYCH ---
 if 'permanent_lat' not in st.session_state: st.session_state.permanent_lat = st.session_state.map_center[0]
@@ -230,8 +238,8 @@ if 'new_coords' in st.session_state:
     st.session_state.map_center = st.session_state.new_coords
     st.session_state.permanent_lat = st.session_state.new_coords[0]
     st.session_state.permanent_lon = st.session_state.new_coords[1]
-    st.session_state.lat_widget = st.session_state.new_coords[0]
-    st.session_state.lon_widget = st.session_state.new_coords[1]
+    st.session_state["lat_input_field"] = st.session_state.new_coords[0]
+    st.session_state["lon_input_field"] = st.session_state.new_coords[1]
     del st.session_state.new_coords
 
 # --- OBSŁUGA GPS W TLE ---
@@ -243,8 +251,8 @@ if st.session_state.loc_requested:
         st.session_state.map_center = [lat, lon]
         st.session_state.permanent_lat = lat
         st.session_state.permanent_lon = lon
-        st.session_state.lat_widget = lat
-        st.session_state.lon_widget = lon
+        st.session_state["lat_input_field"] = lat
+        st.session_state["lon_input_field"] = lon
         st.session_state.loc_requested = False
         st.rerun()
 
@@ -257,15 +265,20 @@ def load_route_action(geojson_data, name):
     st.session_state.map_center = [first_coord[1], first_coord[0]]
     st.session_state.permanent_lat = first_coord[1]
     st.session_state.permanent_lon = first_coord[0]
-    st.session_state.lat_widget = first_coord[1]
-    st.session_state.lon_widget = first_coord[0]
-    st.session_state.show_load_toast = True # <--- WŁĄCZENIE FLAGI PO ZAŁADOWANIU
+    # Bezpośrednia aktualizacja słownika widgetów Streamlita gwarantuje brak powrotu do [0,0]
+    st.session_state["lat_input_field"] = first_coord[1]
+    st.session_state["lon_input_field"] = first_coord[0]
+    st.session_state.show_load_toast = True
 
 
-def update_center():
-    st.session_state.permanent_lat = st.session_state.lat_widget
-    st.session_state.permanent_lon = st.session_state.lon_widget
-    st.session_state.map_center = [st.session_state.lat_widget, st.session_state.lon_widget]
+# --- FUNKCJE SYNCHRONIZACJI DLA WIDGETÓW NUMERYCZNYCH ---
+def on_lat_change():
+    st.session_state.permanent_lat = st.session_state["lat_input_field"]
+    st.session_state.map_center[0] = st.session_state["lat_input_field"]
+
+def on_lon_change():
+    st.session_state.permanent_lon = st.session_state["lon_input_field"]
+    st.session_state.map_center[1] = st.session_state["lon_input_field"]
 
 
 # --- OKNO MODALNE (DIALOGOWE) DO DODAWANIA OPINII ---
@@ -395,8 +408,8 @@ with st.sidebar:
                             st.session_state.permanent_lat = location.latitude
                             st.session_state.permanent_lon = location.longitude
                             st.session_state.map_center = [location.latitude, location.longitude]
-                            st.session_state.lat_widget = location.latitude
-                            st.session_state.lon_widget = location.longitude
+                            st.session_state["lat_input_field"] = location.latitude
+                            st.session_state["lon_input_field"] = location.longitude
                             st.session_state.search_address = location.address
                             st.toast(f"Znaleziono: {location.address[:45]}...", icon="📍")
                             st.rerun()
@@ -422,11 +435,9 @@ with st.sidebar:
             st.session_state.search_address = "📍 Twoja bieżąca lokalizacja (GPS)"
             st.rerun()
 
-        if 'lat_widget' not in st.session_state: st.session_state.lat_widget = st.session_state.permanent_lat
-        if 'lon_widget' not in st.session_state: st.session_state.lon_widget = st.session_state.permanent_lon
-
-        st.number_input("Szerokość (Lat)", format="%.6f", key="lat_widget", on_change=update_center)
-        st.number_input("Długość (Lon)", format="%.6f", key="lon_widget", on_change=update_center)
+        # Używamy powiązania wartości początkowej z permanent oraz funkcji on_change
+        input_lat = st.number_input("Szerokość (Lat)", value=st.session_state.permanent_lat, format="%.6f", key="lat_input_field", on_change=on_lat_change)
+        input_lon = st.number_input("Długość (Lon)", value=st.session_state.permanent_lon, format="%.6f", key="lon_input_field", on_change=on_lon_change)
 
         dist_km = st.slider("Dystans (km)", 5, 30, 15)
         bike_type = st.selectbox("Typ roweru(opcjonalne)",

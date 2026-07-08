@@ -9,7 +9,7 @@ from datetime import datetime
 from app.utils.geo_utils import create_gpx
 from app.db.database import SessionLocal, SavedRoute, User
 from app.services.route_analysis_service import analyze_route_compatibility
-
+from app.services.email_service import send_custom_email
 # Słownik ratunkowy (Hardcoded Fallback) na wypadek awarii sieci
 LOCAL_POIS = {
     "lidl gałeczki": (50.2831, 18.9612, "Lidl, Gałeczki, Chorzów"),
