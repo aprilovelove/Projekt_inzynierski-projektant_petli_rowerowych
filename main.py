@@ -39,6 +39,24 @@ st.set_page_config(
     }
 )
 
+import os
+
+# --- AUTOMATYCZNA GENERACJA PLIKU KONFIGURACYJNEGO ---
+# Ten kod sam utworzy niewidoczny folder .streamlit oraz plik config.toml z ciemnym motywem!
+if not os.path.exists(".streamlit"):
+    os.makedirs(".streamlit")
+
+config_path = ".streamlit/config.toml"
+# Zawsze upewniamy się, że plik ma właściwe ustawienia motywu dark
+with open(config_path, "w", encoding="utf-8") as f:
+    f.write("""[theme]
+base = "dark"
+primaryColor = "#EFCC76"
+backgroundColor = "#152010"
+secondaryBackgroundColor = "#2B4121"
+textColor = "#FFFFFF"
+""")
+
 # 1. ŚCIEŻKI DO TWOICH OBRAZKÓW
 MAIN_BG_PATH = "app/images/automatyczny.png"
 SIDEBAR_BG_PATH = "app/images/sidebar.png"
@@ -60,52 +78,61 @@ try:
 except FileNotFoundError:
     sidebar_bg_css = "none"
 
-# 4. AUTOMATYCZNA KONWERSJA LOGO DO BASE64
+# 4. AUTOMATYCZNA KONWERSJA LOGO DO BASE64 (Przywrócona do CSS)
 try:
     with open(LOGO_PATH, "rb") as image_file:
         encoded_logo = base64.b64encode(image_file.read()).decode()
-    logo_css = f"url(data:image/png;base64,{encoded_logo})"
+    logo_css = f"data:image/png;base64,{encoded_logo}"
 except FileNotFoundError:
-    logo_css = "none"
+    logo_css = ""
 
-# 5. WSTRZYKNIĘCIE KODU CSS Z NOWYM HEADEREM, LOGO ORAZ EKRANEM ŁADOWANIA
+logo_background = f"url({logo_css})" if logo_css else "none"
+
+# 5. WSTRZYKNIĘCIE KODU CSS DOPASOWANEGO DO BARW LOGO
 st.markdown(f"""
     <style>
-        @import url('https://fonts.googleapis.com/css2?family=Lexend:wght@300;400;500;600;700&display=swap');
+        @import url('https://fonts.googleapis.com/css2?family=Lexend:wght=300;400;500;600;700&display=swap');
 
-        /* Wymuszenie czcionki Lexend z wyłączeniem ikon systemowych Streamlita */
+        /* Wymuszenie czcionki Lexend */
         html, body, [data-testid="stAppViewContainer"], 
         *:not(i):not(svg):not(span[data-testid="stIconMaterial"]):not(.material-icons) {{
             font-family: 'Lexend', sans-serif !important;
         }}
 
-        /* 1. UKRYWANIE ELEMENTÓW SYSTEMOWYCH I WSTRZYKIWANIE LOGO W HEADER */
+        /* UKRYWANIE ELEMENTÓW SYSTEMOWYCH */
         .stAppDeployButton {{ display:none !important; }}
         #MainMenu {{ visibility: hidden; }}
         footer {{ visibility: hidden; }}
         div[data-testid="stStatusWidget"] {{ visibility: hidden; }}
 
-        /* Przekształcenie czarnego paska w przestrzeń na logo */
+        /* CAŁKOWITE OCZYSZCZENIE GÓRNEGO NAGŁÓWKA */
         [data-testid="stHeader"] {{
-            background-color: transparent !important;
-            background-image: {logo_css} !important;
-            background-repeat: no-repeat !important;
-            background-size: 180px auto !important;
-            background-position: right 40px center !important;
-            height: 100px !important;
+            background: transparent !important;
+            height: 60px !important;
         }}
 
         [data-testid="stAppViewBlockContainer"] {{
-            padding-top: 110px !important;
+            padding-top: 60px !important;
         }}
 
-        /* 2. STYLIZACJA SIDEBARU */
+        /* STYLIZACJA SIDEBARU - Głęboka, dopasowana zieleń (#2B4121 w gradiencie z czernią) */
         [data-testid="stSidebar"] {{ 
-            background: linear-gradient(180deg, rgba(11, 61, 22, 0.85) 0%, rgba(5, 30, 11, 0.95) 100%), {sidebar_bg_css} !important;
+            background: linear-gradient(180deg, rgba(43, 65, 33, 0.9) 0%, rgba(15, 25, 12, 0.98) 100%), {sidebar_bg_css} !important;
             background-size: cover !important;
             background-position: center !important;
-            border-right: 3px solid #cccc99 !important;
+            border-right: 3px solid #EFCC76 !important;
             border-radius: 0px 20px 20px 0px;
+        }}
+
+        /* KONTENER LOGO */
+        .sidebar-logo-container {{
+            width: 100% !important;
+            height: 110px !important;
+            background-image: {logo_background} !important;
+            background-repeat: no-repeat !important;
+            background-size: 360px !important;
+            background-position: center center !important;
+            margin-bottom: 5px !important;
         }}
 
         [data-testid="stSidebar"] .stMarkdown p, 
@@ -115,7 +142,7 @@ st.markdown(f"""
             text-shadow: 1px 1px 3px rgba(0, 0, 0, 0.8);
         }}
 
-        /* 3. NOWE UKRYTE TŁO APLIKACJI */
+        /* TŁO APLIKACJI */
         .stApp {{ 
             background: linear-gradient(rgba(0, 0, 0, 0.65), rgba(0, 0, 0, 0.85)), {main_bg_css} !important;
             background-size: cover !important;
@@ -124,7 +151,7 @@ st.markdown(f"""
         }}
 
         h1, h2, h3 {{
-            color: #cccc99 !important;                   
+            color: #EFCC76 !important; /* Złoty odcień Route */                  
             font-family: 'Helvetica Neue', sans-serif !important;
             padding-bottom: 8px;
             text-shadow: 1px 1px 4px rgba(0, 0, 0, 0.8); 
@@ -136,11 +163,11 @@ st.markdown(f"""
             text-shadow: 1px 1px 3px rgba(0, 0, 0, 0.9);
         }}
 
-        /* 4. STYLIZACJA PRZYCISKÓW */
+        /* STYLIZACJA PRZYCISKÓW (Zieleń z loga jako baza, złoty na hover/primary) */
         div.stButton > button {{
-            background-color: #166534 !important;        
+            background-color: #2B4121 !important;        
             color: #ffffff !important;                   
-            border: 1px solid #cccc99 !important;        
+            border: 1px solid #EFCC76 !important;        
             border-radius: 8px !important;               
             padding: 8px 16px !important;
             font-weight: 600 !important;
@@ -148,24 +175,47 @@ st.markdown(f"""
         }}
 
         div.stButton > button:hover {{
-            background-color: #cccc99 !important;        
-            color: #000000 !important;                   
+            background-color: #EFCC76 !important;        
+            color: #152010 !important;                   
             border-color: #ffffff !important;
-            box-shadow: 0px 4px 12px rgba(204, 204, 153, 0.3) !important;
+            box-shadow: 0px 4px 12px rgba(239, 204, 118, 0.3) !important;
         }}
 
         div.stButton > button[data-testid="stBaseButton-primary"] {{
-            background-color: #cccc99 !important;
-            color: #000000 !important;
+            background-color: #EFCC76 !important;
+            color: #152010 !important;
+            border: 1px solid #ffffff !important;
         }}
         div.stButton > button[data-testid="stBaseButton-primary"]:hover {{
             background-color: #ffffff !important;
             box-shadow: 0px 4px 15px rgba(255, 255, 255, 0.4) !important;
         }}
 
-        /* 5. NAGŁÓWKI ZAKŁADEK */
+        /* PRZEŁĄCZNIK TRYBÓW (Segmented Control) - usunięcie czerwonego koloru */
+        div[data-testid="stSegmentedControl"] button {{
+            background-color: rgba(0, 0, 0, 0.5) !important;
+            color: #e2e8f0 !important;
+            border: 1px solid rgba(239, 204, 118, 0.2) !important;
+        }}
+        div[data-testid="stSegmentedControl"] button[aria-checked="true"] {{
+            background-color: #2B4121 !important;
+            color: #EFCC76 !important;
+            border: 1px solid #EFCC76 !important;
+            font-weight: bold !important;
+        }}
+
+        /* RADIO BUTTONY - zmiana czerwonej kropki na złoto-żółtą */
+        div[data-testid="stRadio"] label div[role="radiogroup"] div[data-checked="true"] > div {{
+            background-color: #EFCC76 !important;
+            border-color: #EFCC76 !important;
+        }}
+        div[data-testid="stRadio"] label div[role="radiogroup"] div[data-checked="true"] {{
+            border-color: #EFCC76 !important;
+        }}
+
+        /* NAGŁÓWKI ZAKŁADEK (Tabs) */
         button[data-baseweb="tab"] {{
-            color: #cccc99cc !important;                 
+            color: rgba(239, 204, 118, 0.7) !important;                 
             font-size: 16px !important;
             font-weight: 500 !important;
             transition: color 0.2s ease !important;
@@ -174,26 +224,39 @@ st.markdown(f"""
             padding: 4px 12px !important;
         }}
         button[data-baseweb="tab"][aria-selected="true"] {{
-            color: #cccc99 !important;                   
-            border-bottom-color: #cccc99 !important;     
+            color: #EFCC76 !important;                   
+            border-bottom-color: #EFCC76 !important;     
             font-weight: bold !important;
             background: rgba(0, 0, 0, 0.7) !important;
         }}
 
-        /* 6. POLA WPROWADZANIA TEKSTU */
-        div[data-testid="stTextInput"] input {{
-            background-color: #1a1a1a !important;        
+        /* POLA WPROWADZANIA TEKSTU / LICZB - ciemna zgniła zieleń zamiast czerni */
+        div[data-testid="stTextInput"] input, 
+        div[data-testid="stNumberInput"] input {{
+            background-color: #152010 !important;        
             color: #ffffff !important;                   
-            border: 1px solid #444444 !important;        
+            border: 1px solid rgba(239, 204, 118, 0.3) !important;        
             border-radius: 8px !important;
-            transition: border-color 0.2s !important;
+            transition: all 0.2s !important;
         }}
-        div[data-testid="stTextInput"] input:focus {{
-            border-color: #cccc99 !important;            
-            box-shadow: 0 0 0 1px #cccc99 !important;
+        div[data-testid="stTextInput"] input:focus,
+        div[data-testid="stNumberInput"] input:focus {{
+            border-color: #EFCC76 !important;            
+            box-shadow: 0 0 0 1px #EFCC76 !important;
+            background-color: #1c2b16 !important;
         }}
 
-        /* 7. KONTENERY */
+        /* BANNERY INFORMACYJNE (Zastąpienie niebieskiego elegancką zielenią i żółcią) */
+        div[data-testid="stNotification"] {{
+            background-color: rgba(43, 65, 33, 0.8) !important;
+            border: 1px solid #EFCC76 !important;
+            color: #ffffff !important;
+        }}
+        div[data-testid="stNotification"] div {{
+            color: #ffffff !important;
+        }}
+
+        /* KONTENERY */
         div[data-testid="stVerticalBlockBorderWrapper"] {{ 
             border: 1px solid #e0e0e0 !important; 
             border-radius: 10px !important; 
@@ -209,53 +272,10 @@ st.markdown(f"""
         }}
 
         .stElementContainer div[data-testid="stExpander"] {{ 
-            border: 1px solid #ffcc00 !important; 
-            background-color: rgba(17, 17, 17, 0.85) !important; 
+            border: 1px solid #EFCC76 !important; 
+            background-color: rgba(21, 32, 16, 0.9) !important; 
         }}
 
-        /* 8. POPRAWIONY EKRAN ŁADOWANIA (BLOKADA EKRANU Z LOGO) */
-        /* Celujemy bezpośrednio we wrapper nakładki, która pojawia się przy odświeżaniu */
-        [data-testid="stAppViewBlocker"], 
-        div[class*="stAppViewBlocker"],
-        .st-emotion-cache-1wmy996[style*="pointer-events: none"] {{
-            background-color: rgba(0, 0, 0, 0.65) !important;
-            backdrop-filter: blur(4px) !important;
-            transition: background-color 0.3s ease !important;
-        }}
-
-        /* Wstrzykiwanie ikony bezpośrednio na całą nakładkę */
-        [data-testid="stAppViewBlocker"]::after,
-        div[class*="stAppViewBlocker"]::after {{
-            content: "" !important;
-            display: block !important;
-            position: fixed !important;
-            top: 50% !important;
-            left: 50% !important;
-            transform: translate(-50%, -50%) !important;
-            width: 160px !important;
-            height: 160px !important;
-            background-image: {logo_css} !important;
-            background-size: contain !important;
-            background-repeat: no-repeat !important;
-            background-position: center !important;
-            z-index: 999999 !important;
-            animation: pulseLogo 1.4s infinite ease-in-out !important;
-        }}
-
-        @keyframes pulseLogo {{
-            0% {{
-                transform: translate(-50%, -50%) scale(0.9) !important;
-                opacity: 0.3 !important;
-            }}
-            50% {{
-                transform: translate(-50%, -50%) scale(1.08) !important;
-                opacity: 0.9 !important;
-            }}
-            100% {{
-                transform: translate(-50%, -50%) scale(0.9) !important;
-                opacity: 0.3 !important;
-            }}
-        }}
     </style>
 """, unsafe_allow_html=True)
 
@@ -309,7 +329,6 @@ def load_route_action(geojson_data, name):
     st.session_state.map_center = [first_coord[1], first_coord[0]]
     st.session_state.permanent_lat = first_coord[1]
     st.session_state.permanent_lon = first_coord[0]
-    # Bezpośrednia aktualizacja słownika widgetów Streamlita gwarantuje brak powrotu do [0,0]
     st.session_state["lat_input_field"] = first_coord[1]
     st.session_state["lon_input_field"] = first_coord[0]
     st.session_state.show_load_toast = True
@@ -319,6 +338,7 @@ def load_route_action(geojson_data, name):
 def on_lat_change():
     st.session_state.permanent_lat = st.session_state["lat_input_field"]
     st.session_state.map_center[0] = st.session_state["lat_input_field"]
+
 
 def on_lon_change():
     st.session_state.permanent_lon = st.session_state["lon_input_field"]
@@ -388,6 +408,11 @@ bike_type = "Brak"
 # KROK 2: SIDEBAR
 # =========================================================================
 with st.sidebar:
+    # Użycie dedykowanego kontenera HTML na logo wstrzykiwane przez CSS
+    st.markdown('<div class="sidebar-logo-container"></div>', unsafe_allow_html=True)
+    st.markdown("<hr style='margin: 0px 0 20px 0; border: 0; border-top: 1px solid rgba(204, 204, 153, 0.2);'>",
+                unsafe_allow_html=True)
+
     if st.session_state.user is None:
         st.header("🔑 Panel Użytkownika")
         choice = st.radio("Akcja", ["Logowanie", "Rejestracja"])
@@ -479,9 +504,10 @@ with st.sidebar:
             st.session_state.search_address = "📍 Twoja bieżąca lokalizacja (GPS)"
             st.rerun()
 
-        # Używamy powiązania wartości początkowej z permanent oraz funkcji on_change
-        input_lat = st.number_input("Szerokość (Lat)", value=st.session_state.permanent_lat, format="%.6f", key="lat_input_field", on_change=on_lat_change)
-        input_lon = st.number_input("Długość (Lon)", value=st.session_state.permanent_lon, format="%.6f", key="lon_input_field", on_change=on_lon_change)
+        input_lat = st.number_input("Szerokość (Lat)", value=st.session_state.permanent_lat, format="%.6f",
+                                    key="lat_input_field", on_change=on_lat_change)
+        input_lon = st.number_input("Długość (Lon)", value=st.session_state.permanent_lon, format="%.6f",
+                                    key="lon_input_field", on_change=on_lon_change)
 
         dist_km = st.slider("Dystans (km)", 5, 30, 15)
         bike_type = st.selectbox("Typ roweru(opcjonalne)",
@@ -609,7 +635,7 @@ if active_tab == "🚲 Projektant automatyczny":
                         curr_user = db.get(User, st.session_state.user['id'])
                         target_email = curr_user.email if curr_user else None
                     except Exception as e:
-                        st.error(f"Błąd bazy danych: {e}");
+                        st.error(f"Błąd bazy danych: {e}")
                         target_email = None
                     finally:
                         db.close()
@@ -621,7 +647,7 @@ if active_tab == "🚲 Projektant automatyczny":
                                                  f"trasa_{ts}.gpx"):
                                 st.toast("E-mail został wysłany!")
                             else:
-                                st.error("Błąd serwera e-mail.")
+                                r = st.error("Błąd serwera e-mail.")
                 else:
                     st.error("Nie znaleziono adresu e-mail lub nie jesteś zalogowany.")
 
@@ -718,6 +744,7 @@ elif active_tab == "📒 Zapisane Trasy":
         st.header("🎴 Twoje Trasy")
         db = SessionLocal()
         my_routes = db.query(SavedRoute).filter_by(user_id=st.session_state.user['id']).all()
+
         for r in my_routes:
             with st.container(border=True):
                 c1, c2, c3 = st.columns([2, 1, 1])
