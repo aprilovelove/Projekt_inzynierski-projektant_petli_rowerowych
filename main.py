@@ -68,17 +68,17 @@ try:
 except FileNotFoundError:
     logo_css = "none"
 
-# 5. WSTRZYKNIĘCIE KODU CSS Z NOWYM HEADEREM I LOGO
+# 5. WSTRZYKNIĘCIE KODU CSS Z NOWYM HEADEREM, LOGO ORAZ EKRANEM ŁADOWANIA
 st.markdown(f"""
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Lexend:wght@300;400;500;600;700&display=swap');
 
-/* Wymuszenie czcionki Lexend z wyłączeniem ikon systemowych Streamlita */
+        /* Wymuszenie czcionki Lexend z wyłączeniem ikon systemowych Streamlita */
         html, body, [data-testid="stAppViewContainer"], 
         *:not(i):not(svg):not(span[data-testid="stIconMaterial"]):not(.material-icons) {{
-        font-family: 'Lexend', sans-serif !important;
-}}
-        
+            font-family: 'Lexend', sans-serif !important;
+        }}
+
         /* 1. UKRYWANIE ELEMENTÓW SYSTEMOWYCH I WSTRZYKIWANIE LOGO W HEADER */
         .stAppDeployButton {{ display:none !important; }}
         #MainMenu {{ visibility: hidden; }}
@@ -211,6 +211,50 @@ st.markdown(f"""
         .stElementContainer div[data-testid="stExpander"] {{ 
             border: 1px solid #ffcc00 !important; 
             background-color: rgba(17, 17, 17, 0.85) !important; 
+        }}
+
+        /* 8. POPRAWIONY EKRAN ŁADOWANIA (BLOKADA EKRANU Z LOGO) */
+        /* Celujemy bezpośrednio we wrapper nakładki, która pojawia się przy odświeżaniu */
+        [data-testid="stAppViewBlocker"], 
+        div[class*="stAppViewBlocker"],
+        .st-emotion-cache-1wmy996[style*="pointer-events: none"] {{
+            background-color: rgba(0, 0, 0, 0.65) !important;
+            backdrop-filter: blur(4px) !important;
+            transition: background-color 0.3s ease !important;
+        }}
+
+        /* Wstrzykiwanie ikony bezpośrednio na całą nakładkę */
+        [data-testid="stAppViewBlocker"]::after,
+        div[class*="stAppViewBlocker"]::after {{
+            content: "" !important;
+            display: block !important;
+            position: fixed !important;
+            top: 50% !important;
+            left: 50% !important;
+            transform: translate(-50%, -50%) !important;
+            width: 160px !important;
+            height: 160px !important;
+            background-image: {logo_css} !important;
+            background-size: contain !important;
+            background-repeat: no-repeat !important;
+            background-position: center !important;
+            z-index: 999999 !important;
+            animation: pulseLogo 1.4s infinite ease-in-out !important;
+        }}
+
+        @keyframes pulseLogo {{
+            0% {{
+                transform: translate(-50%, -50%) scale(0.9) !important;
+                opacity: 0.3 !important;
+            }}
+            50% {{
+                transform: translate(-50%, -50%) scale(1.08) !important;
+                opacity: 0.9 !important;
+            }}
+            100% {{
+                transform: translate(-50%, -50%) scale(0.9) !important;
+                opacity: 0.3 !important;
+            }}
         }}
     </style>
 """, unsafe_allow_html=True)
