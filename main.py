@@ -88,8 +88,6 @@ except FileNotFoundError:
 
 logo_background = f"url({logo_css})" if logo_css else "none"
 
-# 5. WSTRZYKNIĘCIE PRAWIDŁOWEGO SKRYPTU CZCIONKI ORAZ CSS
-# Najpierw wczytujemy czcionkę Lexend bezpośrednio przez znacznik <link>
 st.markdown("""
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -105,6 +103,16 @@ st.markdown(f"""
             font-family: 'Lexend', sans-serif !important;
         }}
 
+        /* WYJĄTEK: ikony Streamlita (strzałki, chevrony itp.) NIE mają dostać Lexend */
+        [data-testid="stIconMaterial"],
+        span[class*="material-icons"],
+        span[class*="material-symbols"],
+        [data-testid="stExpanderIcon"],
+        [data-testid="stExpanderToggleIcon"],
+        svg {{
+            font-family: 'Material Symbols Rounded', 'Material Icons' !important;
+        }}
+
         /* Globalne nadpisanie zmiennych kolorów */
         :root, [data-testid="stAppViewContainer"], [data-testid="stSidebar"] {{
             --primary-color: #EFCC76 !important;
@@ -117,15 +125,31 @@ st.markdown(f"""
         #MainMenu {{ visibility: hidden; }}
         footer {{ visibility: hidden; }}
         div[data-testid="stStatusWidget"] {{ visibility: hidden; }}
+        div[data-testid="stToolbar"] {{ display: none !important; }}
+        div[data-testid="stDecoration"] {{ display: none !important; }}
 
         /* CAŁKOWITE OCZYSZCZENIE GÓRNEGO NAGŁÓWKA */
         [data-testid="stHeader"] {{
             background: transparent !important;
-            height: 60px !important;
+            height: 0px !important;
+            min-height: 0px !important;
         }}
 
         [data-testid="stAppViewBlockContainer"] {{
-            padding-top: 60px !important;
+            padding-top: 0rem !important;
+        }}
+
+        /* Rezerwowe/starsze selektory na wypadek innej wersji Streamlit */
+        .block-container {{
+            padding-top: 1rem !important;
+        }}
+
+        [data-testid="stAppViewContainer"] > .main {{
+            padding-top: 0rem !important;
+        }}
+
+        section.main > div {{
+            padding-top: 0rem !important;
         }}
 
         /* STYLIZACJA SIDEBARU */
@@ -198,7 +222,6 @@ st.markdown(f"""
         /* POWIĘKSZONE ZAKŁADKI (st.segmented_control / st.tabs)   */
         /* ======================================================= */
 
-        /* Kontener główny paska zakładek - PEŁNA SZEROKOŚĆ */
         div[data-testid="stSegmentedControl"],
         div[data-testid="stSegmentedControl"] > div {{
             width: 100% !important;
@@ -210,14 +233,13 @@ st.markdown(f"""
             gap: 6px !important;
         }}
 
-        /* Poszczególne przyciski zakładek - ROZCIĄGNIĘCIE I POWIĘKSZENIE */
         div[data-testid="stSegmentedControl"] button,
         div[data-testid="stSegmentedControl"] [role="option"] {{
-            flex: 1 1 0% !important;               /* Każda zakładka zajmuje równą, maksymalną szerokość */
-            min-height: 48px !important;           /* Wyższe zakładki */
-            font-size: 16px !important;            /* Większa czcionka Lexend */
+            flex: 1 1 0% !important;
+            min-height: 48px !important;
+            font-size: 16px !important;
             font-weight: 600 !important;
-            padding: 10px 16px !important;         /* Większy odstęp wewnątrz */
+            padding: 10px 16px !important;
             background-color: transparent !important;
             color: #e2e8f0 !important;
             border: none !important;
@@ -225,16 +247,14 @@ st.markdown(f"""
             transition: all 0.2s ease-in-out !important;
         }}
 
-        /* Aktywna wyselekcjonowana zakładka */
         div[data-testid="stSegmentedControl"] button[aria-checked="true"],
         div[data-testid="stSegmentedControl"] [aria-selected="true"] {{
-            background-color: #2B4121 !important;  /* Ciemniejsza zielona baza */
-            color: #EFCC76 !important;              /* Złoty tekst */
+            background-color: #2B4121 !important;
+            color: #EFCC76 !important;
             border: 1.5px solid #EFCC76 !important;
             box-shadow: 0px 4px 12px rgba(0, 0, 0, 0.5) !important;
         }}
 
-        /* Alternatywne powiększenie dla klasycznego st.tabs (jeśli też używasz) */
         div[data-testid="stTabs"] [data-baseweb="tab-list"] {{
             width: 100% !important;
             gap: 8px !important;
@@ -284,6 +304,9 @@ st.markdown(f"""
 
     </style>
 """, unsafe_allow_html=True)
+
+
+
 
 # INICJALIZACJA STANU SESJI
 if 'user' not in st.session_state: st.session_state.user = None
@@ -396,14 +419,52 @@ def review_dialog(route_id, route_name):
 
 
 # =========================================================================
-# KROK 1: WYBÓR TRYBU
 # =========================================================================
-active_tab = st.segmented_control(
-    "Wybierz tryb projektowania:",
-    options=["🚲 Projektant automatyczny", "Projektant ręczny", "🌍 Społeczność", "📒 Zapisane Trasy"],
-    default="🚲 Projektant automatyczny",
-    label_visibility="collapsed"
-)
+# KROK 1: WYBÓR TRYBU ORAZ LOGO (W JEDNYM WIERSZU)
+# =========================================================================
+import streamlit as st
+
+# ============================================
+# 2 WIERSZE, 2 KOLUMNY — LOGO W 2 WIERSZACH
+# ============================================
+
+import base64
+
+def load_logo_base64(path):
+    with open(path, "rb") as f:
+        return base64.b64encode(f.read()).decode()
+
+logo_base64 = load_logo_base64("app/images/logo.png")
+
+
+top_col1, top_col2 = st.columns([1, 2.5], vertical_alignment="center")
+
+with top_col1:
+    st.markdown(
+        f"""
+        <div style="
+            background-image: url('data:image/png;base64,{logo_base64}');
+            background-size: contain;
+            background-repeat: no-repeat;
+            background-position: center left;
+            width: 100%;
+            height: 170px;   /* zwiększone z 70px */
+        ">
+        </div>
+        """,
+        unsafe_allow_html=True
+    )
+
+# --- ZAKŁADKI ---
+with top_col2:
+    active_tab = st.segmented_control(
+        "Wybierz tryb projektowania:",
+        options=["🚲 Projektant automatyczny", "Projektant ręczny", "🌍 Społeczność", "📒 Zapisane Trasy"],
+        default="🚲 Projektant automatyczny",
+        label_visibility="collapsed"
+    )
+
+
 
 # Zmienne globalne dla sidebaru
 generate_btn = False
@@ -411,13 +472,10 @@ dist_km = 15
 bike_type = "Brak"
 
 # =========================================================================
-# KROK 2: SIDEBAR
+# KROK 2: SIDEBAR (BEZ LOGO)
 # =========================================================================
 with st.sidebar:
-    # Użycie dedykowanego kontenera HTML na logo wstrzykiwane przez CSS
-    st.markdown('<div class="sidebar-logo-container"></div>', unsafe_allow_html=True)
-    st.markdown("<hr style='margin: 0px 0 20px 0; border: 0; border-top: 1px solid rgba(204, 204, 153, 0.2);'>",
-                unsafe_allow_html=True)
+    # Kontener HTML na logo został stąd usunięty
 
     if st.session_state.user is None:
         st.header("🔑 Panel Użytkownika")
@@ -525,7 +583,6 @@ with st.sidebar:
                                  ["Brak", "Szosowy/miejski", "Gravel(hybrydowy)", "MTB(terenowy)"])
     else:
         st.caption("Przełącz na projektant automatyczny lub ręczny, aby zmienić ustawienia.")
-
 # =========================================================================
 # KROK 3: TREŚĆ OKNA GŁÓWNEGO
 # =========================================================================
