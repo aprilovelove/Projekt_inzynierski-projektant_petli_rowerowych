@@ -88,15 +88,28 @@ except FileNotFoundError:
 
 logo_background = f"url({logo_css})" if logo_css else "none"
 
-# 5. WSTRZYKNIĘCIE KODU CSS DOPASOWANEGO DO BARW LOGO
+# 5. WSTRZYKNIĘCIE PRAWIDŁOWEGO SKRYPTU CZCIONKI ORAZ CSS
+# Najpierw wczytujemy czcionkę Lexend bezpośrednio przez znacznik <link>
+st.markdown("""
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Lexend:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+""", unsafe_allow_html=True)
+
+# Następnie nakładamy zoptymalizowane style CSS
 st.markdown(f"""
     <style>
-        @import url('https://fonts.googleapis.com/css2?family=Lexend:wght=300;400;500;600;700&display=swap');
-
-        /* Wymuszenie czcionki Lexend */
-        html, body, [data-testid="stAppViewContainer"], 
-        *:not(i):not(svg):not(span[data-testid="stIconMaterial"]):not(.material-icons) {{
+        /* GLOBALNA CZCIONKA LEXEND Z NAJWYŻSZYM PRIORYTETEM */
+        html, body, [data-testid="stAppViewContainer"], [data-testid="stSidebar"],
+        .stApp, div, span, p, label, button, input, select, textarea {{
             font-family: 'Lexend', sans-serif !important;
+        }}
+
+        /* Globalne nadpisanie zmiennych kolorów */
+        :root, [data-testid="stAppViewContainer"], [data-testid="stSidebar"] {{
+            --primary-color: #EFCC76 !important;
+            --primary: #EFCC76 !important;
+            --state-selected-background: #2B4121 !important;
         }}
 
         /* UKRYWANIE ELEMENTÓW SYSTEMOWYCH */
@@ -115,22 +128,21 @@ st.markdown(f"""
             padding-top: 60px !important;
         }}
 
-        /* STYLIZACJA SIDEBARU - Głęboka, dopasowana zieleń (#2B4121 w gradiencie z czernią) */
+        /* STYLIZACJA SIDEBARU */
         [data-testid="stSidebar"] {{ 
-            background: linear-gradient(180deg, rgba(43, 65, 33, 0.9) 0%, rgba(15, 25, 12, 0.98) 100%), {sidebar_bg_css} !important;
+            background: linear-gradient(180deg, rgba(43, 65, 33, 0.92) 0%, rgba(21, 33, 16, 0.98) 100%), {sidebar_bg_css} !important;
             background-size: cover !important;
             background-position: center !important;
             border-right: 3px solid #EFCC76 !important;
             border-radius: 0px 20px 20px 0px;
         }}
 
-        /* KONTENER LOGO */
         .sidebar-logo-container {{
             width: 100% !important;
             height: 110px !important;
             background-image: {logo_background} !important;
             background-repeat: no-repeat !important;
-            background-size: 360px !important;
+            background-size: contain !important;
             background-position: center center !important;
             margin-bottom: 5px !important;
         }}
@@ -151,8 +163,9 @@ st.markdown(f"""
         }}
 
         h1, h2, h3 {{
-            color: #EFCC76 !important; /* Złoty odcień Route */                  
-            font-family: 'Helvetica Neue', sans-serif !important;
+            color: #EFCC76 !important;                  
+            font-family: 'Lexend', sans-serif !important;
+            font-weight: 700 !important;
             padding-bottom: 8px;
             text-shadow: 1px 1px 4px rgba(0, 0, 0, 0.8); 
         }}
@@ -163,7 +176,7 @@ st.markdown(f"""
             text-shadow: 1px 1px 3px rgba(0, 0, 0, 0.9);
         }}
 
-        /* STYLIZACJA PRZYCISKÓW (Zieleń z loga jako baza, złoty na hover/primary) */
+        /* STYLIZACJA PRZYCISKÓW */
         div.stButton > button {{
             background-color: #2B4121 !important;        
             color: #ffffff !important;                   
@@ -181,97 +194,90 @@ st.markdown(f"""
             box-shadow: 0px 4px 12px rgba(239, 204, 118, 0.3) !important;
         }}
 
-        div.stButton > button[data-testid="stBaseButton-primary"] {{
-            background-color: #EFCC76 !important;
-            color: #152010 !important;
-            border: 1px solid #ffffff !important;
-        }}
-        div.stButton > button[data-testid="stBaseButton-primary"]:hover {{
-            background-color: #ffffff !important;
-            box-shadow: 0px 4px 15px rgba(255, 255, 255, 0.4) !important;
+        /* ======================================================= */
+        /* POWIĘKSZONE ZAKŁADKI (st.segmented_control / st.tabs)   */
+        /* ======================================================= */
+
+        /* Kontener główny paska zakładek - PEŁNA SZEROKOŚĆ */
+        div[data-testid="stSegmentedControl"],
+        div[data-testid="stSegmentedControl"] > div {{
+            width: 100% !important;
+            display: flex !important;
+            background-color: rgba(21, 32, 16, 0.85) !important;
+            border: 1.5px solid rgba(239, 204, 118, 0.5) !important;
+            border-radius: 12px !important;
+            padding: 6px !important;
+            gap: 6px !important;
         }}
 
-        /* PRZEŁĄCZNIK TRYBÓW (Segmented Control) - usunięcie czerwonego koloru */
-        div[data-testid="stSegmentedControl"] button {{
-            background-color: rgba(0, 0, 0, 0.5) !important;
+        /* Poszczególne przyciski zakładek - ROZCIĄGNIĘCIE I POWIĘKSZENIE */
+        div[data-testid="stSegmentedControl"] button,
+        div[data-testid="stSegmentedControl"] [role="option"] {{
+            flex: 1 1 0% !important;               /* Każda zakładka zajmuje równą, maksymalną szerokość */
+            min-height: 48px !important;           /* Wyższe zakładki */
+            font-size: 16px !important;            /* Większa czcionka Lexend */
+            font-weight: 600 !important;
+            padding: 10px 16px !important;         /* Większy odstęp wewnątrz */
+            background-color: transparent !important;
             color: #e2e8f0 !important;
-            border: 1px solid rgba(239, 204, 118, 0.2) !important;
-        }}
-        div[data-testid="stSegmentedControl"] button[aria-checked="true"] {{
-            background-color: #2B4121 !important;
-            color: #EFCC76 !important;
-            border: 1px solid #EFCC76 !important;
-            font-weight: bold !important;
+            border: none !important;
+            border-radius: 8px !important;
+            transition: all 0.2s ease-in-out !important;
         }}
 
-        /* RADIO BUTTONY - zmiana czerwonej kropki na złoto-żółtą */
-        div[data-testid="stRadio"] label div[role="radiogroup"] div[data-checked="true"] > div {{
-            background-color: #EFCC76 !important;
-            border-color: #EFCC76 !important;
-        }}
-        div[data-testid="stRadio"] label div[role="radiogroup"] div[data-checked="true"] {{
-            border-color: #EFCC76 !important;
+        /* Aktywna wyselekcjonowana zakładka */
+        div[data-testid="stSegmentedControl"] button[aria-checked="true"],
+        div[data-testid="stSegmentedControl"] [aria-selected="true"] {{
+            background-color: #2B4121 !important;  /* Ciemniejsza zielona baza */
+            color: #EFCC76 !important;              /* Złoty tekst */
+            border: 1.5px solid #EFCC76 !important;
+            box-shadow: 0px 4px 12px rgba(0, 0, 0, 0.5) !important;
         }}
 
-        /* NAGŁÓWKI ZAKŁADEK (Tabs) */
-        button[data-baseweb="tab"] {{
-            color: rgba(239, 204, 118, 0.7) !important;                 
+        /* Alternatywne powiększenie dla klasycznego st.tabs (jeśli też używasz) */
+        div[data-testid="stTabs"] [data-baseweb="tab-list"] {{
+            width: 100% !important;
+            gap: 8px !important;
+        }}
+        div[data-testid="stTabs"] button[data-baseweb="tab"] {{
+            flex: 1 !important;
+            height: 50px !important;
             font-size: 16px !important;
-            font-weight: 500 !important;
-            transition: color 0.2s ease !important;
-            background: rgba(0, 0, 0, 0.4) !important;   
-            border-radius: 4px 4px 0 0;
-            padding: 4px 12px !important;
-        }}
-        button[data-baseweb="tab"][aria-selected="true"] {{
-            color: #EFCC76 !important;                   
-            border-bottom-color: #EFCC76 !important;     
-            font-weight: bold !important;
-            background: rgba(0, 0, 0, 0.7) !important;
+            font-weight: 600 !important;
+            background-color: rgba(21, 32, 16, 0.85) !important;
+            color: #ffffff !important;
+            border-radius: 8px 8px 0 0 !important;
         }}
 
-        /* POLA WPROWADZANIA TEKSTU / LICZB - ciemna zgniła zieleń zamiast czerni */
+        /* ======================================================= */
+        /* RADIO BUTTONY I OBSŁUGA INPUTÓW                         */
+        /* ======================================================= */
+
+        div[data-testid="stRadio"] *:focus,
+        div[data-testid="stRadio"] *:focus-visible {{
+            outline: none !important;
+            box-shadow: none !important;
+        }}
+
+        div[data-testid="stRadio"] [data-checked="true"] > div {{
+            background-color: #EFCC76 !important;
+        }}
+
+        div[data-testid="stRadio"] label p {{
+            color: #ffffff !important;
+            font-size: 15px !important;
+        }}
+
         div[data-testid="stTextInput"] input, 
-        div[data-testid="stNumberInput"] input {{
+        div[data-testid="stNumberInput"] input,
+        div[data-testid="stSelectbox"] div[data-baseweb="select"] {{
             background-color: #152010 !important;        
             color: #ffffff !important;                   
             border: 1px solid rgba(239, 204, 118, 0.3) !important;        
             border-radius: 8px !important;
-            transition: all 0.2s !important;
-        }}
-        div[data-testid="stTextInput"] input:focus,
-        div[data-testid="stNumberInput"] input:focus {{
-            border-color: #EFCC76 !important;            
-            box-shadow: 0 0 0 1px #EFCC76 !important;
-            background-color: #1c2b16 !important;
         }}
 
-        /* BANNERY INFORMACYJNE (Zastąpienie niebieskiego elegancką zielenią i żółcią) */
-        div[data-testid="stNotification"] {{
-            background-color: rgba(43, 65, 33, 0.8) !important;
-            border: 1px solid #EFCC76 !important;
-            color: #ffffff !important;
-        }}
-        div[data-testid="stNotification"] div {{
-            color: #ffffff !important;
-        }}
-
-        /* KONTENERY */
-        div[data-testid="stVerticalBlockBorderWrapper"] {{ 
-            border: 1px solid #e0e0e0 !important; 
-            border-radius: 10px !important; 
-            padding: 10px !important; 
-            background-color: #ffffff !important;         
-        }}
-        div[data-testid="stVerticalBlockBorderWrapper"] .stMarkdown p,
-        div[data-testid="stVerticalBlockBorderWrapper"] h1,
-        div[data-testid="stVerticalBlockBorderWrapper"] h2,
-        div[data-testid="stVerticalBlockBorderWrapper"] h3 {{
-            color: #1a1a1a !important;
-            text-shadow: none !important;
-        }}
-
-        .stElementContainer div[data-testid="stExpander"] {{ 
+        div[data-testid="stExpander"] {{ 
             border: 1px solid #EFCC76 !important; 
             background-color: rgba(21, 32, 16, 0.9) !important; 
         }}
