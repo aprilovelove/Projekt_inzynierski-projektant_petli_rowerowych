@@ -6,7 +6,7 @@ import networkx as nx
 import json
 import requests
 from datetime import datetime
-from app.utils.geo_utils import create_gpx
+from app.utils.geo_utils import create_gpx, format_surface_summary
 from app.db.database import SessionLocal, SavedRoute, User
 from app.services.route_analysis_service import analyze_route_compatibility
 from app.services.email_service import send_custom_email
@@ -47,8 +47,8 @@ def alternative_geocode(query: str):
 
 
 def show_manual_designer(bike_type: str = "Brak"):
-    st.header("📍 Projektant ręczny (Wyszukiwarka Punktów)")
-    st.write("Wpisz lokalizacje, zweryfikuj podgląd tekstowy, a następnie nanieś je i połącz w trasę!")
+    st.header("Projektant manualny - wyszukuj po kolei punkty swojej własnej trasy.")
+    st.write("Wpisz lokalizację w pole startowego, punktu końcowego lub punktu pośredniego (zwróć uwagę na status po wpisaniu - zielony oznacza znalezione). Następnie nanieś punkty na trasę (1), sprawdź czy się zgadzają i połącz je w trasę(2)! Możesz dodać dowlną ilość punktów pośrednich za pomocą przycisku poniżej.")
 
     # Inicjalizacja stanu sesji
     if 'manual_points' not in st.session_state:
@@ -56,7 +56,7 @@ def show_manual_designer(bike_type: str = "Brak"):
     if 'manual_geojson' not in st.session_state:
         st.session_state.manual_geojson = None
     if 'manual_route_name' not in st.session_state:
-        st.session_state.manual_route_name = "Moja Trasa Ręczna"
+        st.session_state.manual_route_name = "Moja Trasa Manualna"
     if 'confirmed_coords' not in st.session_state:
         st.session_state.confirmed_coords = []
     if 'G_manual' not in st.session_state:
@@ -101,7 +101,7 @@ def show_manual_designer(bike_type: str = "Brak"):
             label = f"📍 Punkt pośredni {i}"
 
         val = st.text_input(label, value=st.session_state.manual_points[i], key=f"manual_pt_{i}",
-                            placeholder="np. Lidl Gałeczki, Chorzów")
+                            placeholder="np. Teatr Rozrywki, Pomnik Chopina, Szyb Prezydent, Lidl Gałeczki")
         st.session_state.manual_points[i] = val
 
         if val.strip():
@@ -111,12 +111,14 @@ def show_manual_designer(bike_type: str = "Brak"):
                 st.caption(f"🟩 **Znaleziono:** `{res[2]}` (Lat: {round(res[0], 4)}, Lon: {round(res[1], 4)})")
             else:
                 all_fields_resolved = False
-                st.caption("⚠️ **Status:** Nie znaleziono punktu. Dopisz miasto lub zmień nazwę.")
+                st.caption("⚠️ **Status:** Nie znaleziono punktu. Dopisz miasto, zmień nazwę lub podaj więcej szczegółów.")
         else:
             all_fields_resolved = False
             st.caption("ℹ️ **Status:** Oczekiwanie na wpisanie lokalizacji...")
 
     st.divider()
+
+    st.write("Generowanie trasy manualnej może potrwać nawet kilka minut. Nie chcesz czekać? Zdaj się na los i wygeneruj trasę na projektancie automatycznym ;)")
 
     if st.button("🔍 1. Zatwierdź i nanieś punkty na mapę", use_container_width=True, type="secondary"):
         if not all_fields_resolved or len(live_coords) != len(st.session_state.manual_points):
@@ -132,7 +134,7 @@ def show_manual_designer(bike_type: str = "Brak"):
         if len(coords_list) < 2:
             st.error("Najpierw musisz poprawnie zatwierdzić i nanieść punkty na mapę przyciskiem (Krok 1)!")
         else:
-            with st.spinner("Trwa kalkulacja trasy algorytmem A*..."):
+            with st.spinner("Trwa generowanie trasy..."):
                 try:
                     full_route_coords = []
                     total_length_m = 0
@@ -184,7 +186,7 @@ def show_manual_designer(bike_type: str = "Brak"):
                             "properties": {"length_km": round(total_length_m / 1000, 2)}
                         }]
                     }
-                    st.toast("Trasa wyznaczona pomyślnie!", icon="🚴")
+                    st.toast("Trasa wygenerowana!", icon="🚴")
                     st.rerun()
                 except Exception as e:
                     st.error(f"Błąd sieci rowerowej: {e}. Spróbuj skorygować punkty pośrednie.")
@@ -206,12 +208,13 @@ def show_manual_designer(bike_type: str = "Brak"):
                 st.session_state.manual_nodes,
                 bike_type
             )
+            st.session_state.manual_route_score = (status, color, surf_stats)
 
             if status:
                 c2.markdown(f"**Status dopasowania do roweru:** \n**{status}**")
                 if surf_stats:
                     c2.markdown("---")
-                    c2.markdown("**Struktura nawierzchni trasy ręcznej:**")
+                    c2.markdown("**Struktura nawierzchni trasy manualnej:**")
                     c2.markdown(
                         f"🟦 **Utwardzona (Asfalt/Beton):** `{surf_stats['paved_pct']}%` ({surf_stats['paved_km']} km)")
                     c2.markdown(
@@ -242,7 +245,7 @@ def show_manual_designer(bike_type: str = "Brak"):
     # Eksport trasy
     if st.session_state.manual_geojson:
         st.divider()
-        st.subheader("📲 Opcje zapisu i wysyłki trasy ręcznej")
+        st.subheader("📲 Opcje zapisu i wysyłki trasy manualnej")
 
         active_geojson = st.session_state.manual_geojson
         current_gpx = create_gpx(active_geojson)
@@ -277,13 +280,13 @@ def show_manual_designer(bike_type: str = "Brak"):
                         with st.spinner("Wysyłanie e-maila ze śladem GPX..."):
                             success = send_custom_email(
                                 recipient_email=target_email.strip(),
-                                subject="Zaprojektowana trasa ręczna - GPX",
-                                body=f"Cześć! W załączniku przesyłamy ręcznie zaprojektowaną trasę rowerową ({dist_km} km).",
+                                subject="Plik twojej trasy manualnej RoutePlanner",
+                                body=f"Cześć! W załączniku przesyłamy plik zaprojektowanej przez ciebie trasy manualnej. Pobierz ją na telefon i otwórz za pomocą ulubionej aplikacji i ruszaj w drogę! Rekomendujemy aplikację Samsung Health na systemy Android oraz aplikację Zdrowie na systemy IOS.",
                                 attachment_data=current_gpx,
-                                attachment_name=f"trasa_reczna_{ts}.gpx"
+                                attachment_name=f"trasa_manualna_{ts}.gpx"
                             )
                             if success:
-                                st.toast("E-mail z trasą został wysłany!", icon="📬")
+                                st.toast("E-mail z trasą manualną został wysłany!", icon="📬")
                             else:
                                 st.error("Błąd serwera wysyłkowego. Spróbuj później.")
                     else:
@@ -295,14 +298,20 @@ def show_manual_designer(bike_type: str = "Brak"):
             if st.session_state.user:
                 with st.popover("💾 Zapisz w profilu", use_container_width=True):
                     r_name = st.text_input("Nazwa trasy", value=st.session_state.manual_route_name)
-                    r_vis = st.selectbox("Widoczność trasy", ["private", "public"], key="manual_vis")
+                    r_vis = st.selectbox("Widoczność trasy", ["prywatna", "publiczna"], key="manual_vis")
                     if st.button("Potwierdź Zapis", use_container_width=True):
                         db = SessionLocal()
                         try:
+                            save_data = json.loads(json.dumps(active_geojson))
+                            if 'manual_route_score' in st.session_state:
+                                _, _, m_surf_stats = st.session_state.manual_route_score
+                                if m_surf_stats:
+                                    save_data['features'][0]['properties']['surface_stats'] = m_surf_stats
+
                             new_r = SavedRoute(
                                 user_id=st.session_state.user['id'],
                                 name=r_name,
-                                geojson_data=json.dumps(active_geojson),
+                                geojson_data=json.dumps(save_data),
                                 visibility=r_vis
                             )
                             db.add(new_r)

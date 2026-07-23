@@ -11,7 +11,7 @@ BIKE_PROFILES = {
         "max_perfect": 1.2,
         "max_acceptable": 2.2
     },
-    "Gravel(hybrydowy)": {
+    "Gravel (hybrydowy)": {
         "surface_paved": 0,
         "surface_unpaved": 1.5,
         "highway_smooth": 0,
@@ -21,7 +21,7 @@ BIKE_PROFILES = {
         "max_perfect": 1.8,
         "max_acceptable": 3.0
     },
-    "MTB(terenowy)": {
+    "MTB (terenowy)": {
         "surface_paved": 1.5,
         "surface_unpaved": 0,
         "highway_smooth": 1.5,

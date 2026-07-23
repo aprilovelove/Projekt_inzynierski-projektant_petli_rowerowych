@@ -37,3 +37,18 @@ def create_gpx(geojson_data):
     gpx += '</gpx>'
     return gpx
 
+def format_surface_summary(surface_stats: dict | None) -> str | None:
+    """Zwraca skondensowany opis składu nawierzchni w formacie 'emotikona:procent'."""
+    if not surface_stats:
+        return None
+    parts = []
+    paved = surface_stats.get('paved_pct')
+    unpaved = surface_stats.get('unpaved_pct')
+    unknown = surface_stats.get('unknown_pct')
+    if paved is not None:
+        parts.append(f"🟦:{paved}%")
+    if unpaved is not None:
+        parts.append(f"🟫:{unpaved}%")
+    if unknown:
+        parts.append(f"⬜:{unknown}%")
+    return " ".join(parts) if parts else None
