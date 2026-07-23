@@ -481,7 +481,7 @@ with st.sidebar:
 
     if st.session_state.user is None:
         st.header("Panel Użytkownika")
-        choice = st.radio("Akcja", ["Logowanie", "Rejestracja"], label_visibility="collapsed")
+        choice = st.radio("Akcjaa", ["Logowanie", "Rejestracja"], label_visibility="collapsed")
 
         if choice == "Logowanie":
             e = st.text_input("E-mail/Nick")
