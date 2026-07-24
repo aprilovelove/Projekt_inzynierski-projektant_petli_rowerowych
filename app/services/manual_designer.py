@@ -5,6 +5,7 @@ import osmnx as ox
 import networkx as nx
 import json
 import requests
+import math
 from datetime import datetime
 from app.utils.geo_utils import create_gpx, format_surface_summary
 from app.db.database import SessionLocal, SavedRoute, User
@@ -143,7 +144,12 @@ def show_manual_designer(bike_type: str = "Brak"):
                     center_lat = sum(c[0] for c in coords_list) / len(coords_list)
                     center_lon = sum(c[1] for c in coords_list) / len(coords_list)
 
-                    G_manual = ox.graph_from_point((center_lat, center_lon), dist=8000, network_type="bike")
+                    max_dist_deg = max(
+                        math.dist((center_lat, center_lon), (c[0], c[1])) for c in coords_list
+                    )
+                    graph_radius_m = max_dist_deg * 111_000 * 1.3 + 1000        #pobieranie fragmentu grafu adekwatnego do trasy żeby było szybciej
+
+                    G_manual = ox.graph_from_point((center_lat, center_lon), dist=graph_radius_m, network_type="bike")
                     nodes_df, _ = ox.graph_to_gdfs(G_manual)
 
                     def heuristic(u, v):

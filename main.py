@@ -517,7 +517,7 @@ with st.sidebar:
 
     if active_tab == "Projektant automatyczny":
         st.subheader("🔍 Wyszukaj miejsce startowe")
-        search_query = st.text_input("Tutaj wpisz skąd chcesz zacząć", key="search_query_input")
+        search_query = st.text_input("Tutaj wpisz skąd chcesz zacząć i naciśnij przycisk 'Znajdź punkt na mapie'", key="search_query_input")
 
         if st.button("🔎 Znajdź punkt na mapie", use_container_width=True):
             if search_query:
@@ -558,10 +558,11 @@ with st.sidebar:
             st.session_state.search_address = "📍 Twoja bieżąca lokalizacja (GPS)"
             st.rerun()
 
-        input_lat = st.number_input("Szerokość (Lat)", value=st.session_state.permanent_lat, format="%.6f",
-                                    key="lat_input_field", on_change=on_lat_change)
-        input_lon = st.number_input("Długość (Lon)", value=st.session_state.permanent_lon, format="%.6f",
-                                    key="lon_input_field", on_change=on_lon_change)
+        st.write("Za pomocą +/- możesz dostosować swoją dokładną lokalizację.")
+        input_lat = st.number_input("Szerokość geograficzna", value=st.session_state.permanent_lat, format="%.6f",
+                                    step=0.0001, key="lat_input_field", on_change=on_lat_change)
+        input_lon = st.number_input("Długość geograficzna", value=st.session_state.permanent_lon, format="%.6f",
+                                    step=0.0001, key="lon_input_field", on_change=on_lon_change)
 
         dist_km = st.slider("Dystans w kilometrach", 5, 30, 15)
         bike_type = st.selectbox("Typ roweru (wybór opcjonalny)",
