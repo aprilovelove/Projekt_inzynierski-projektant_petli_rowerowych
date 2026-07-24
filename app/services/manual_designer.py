@@ -212,19 +212,17 @@ def show_manual_designer(bike_type: str = "Brak"):
 
             if status:
                 c2.markdown(f"**Status dopasowania do roweru:** \n**{status}**")
-                if surf_stats:
-                    c2.markdown("---")
-                    c2.markdown("**Struktura nawierzchni trasy manualnej:**")
+                c2.markdown("---")
+
+            if surf_stats:
+                c2.markdown("**Struktura nawierzchni trasy manualnej:**")
+                c2.markdown(
+                    f"🟦 **Utwardzona (Asfalt/Beton):** `{surf_stats['paved_pct']}%` ({surf_stats['paved_km']} km)")
+                c2.markdown(
+                    f"🟫 **Nieutwardzona (Szuter/Grunt):** `{surf_stats['unpaved_pct']}%` ({surf_stats['unpaved_km']} km)")
+                if surf_stats['unknown_pct'] > 0:
                     c2.markdown(
-                        f"🟦 **Utwardzona (Asfalt/Beton):** `{surf_stats['paved_pct']}%` ({surf_stats['paved_km']} km)")
-                    c2.markdown(
-                        f"🟫 **Nieutwardzona (Szuter/Grunt):** `{surf_stats['unpaved_pct']}%` ({surf_stats['unpaved_km']} km)")
-                    if surf_stats['unknown_pct'] > 0:
-                        c2.markdown(
-                            f"⬜ **Nieokreślona (Brak danych):** `{surf_stats['unknown_pct']}%` ({surf_stats['unknown_km']} km)")
-            elif bike_type == "Brak":
-                c2.info(
-                    "💡 Wybierz typ roweru na panelu bocznym (sidebar), aby zobaczyć analizę kompatybilności nawierzchni.")
+                        f"⬜ **Nieokreślona (Brak danych):** `{surf_stats['unknown_pct']}%` ({surf_stats['unknown_km']} km)")
 
     m_manual = folium.Map(location=map_center, zoom_start=14)
 
