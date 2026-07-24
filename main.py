@@ -658,13 +658,32 @@ if active_tab == "Projektant automatyczny":
 
         with c3:
             with st.popover("❓", help="Dowiedz się, jak analizujemy trasy"):
-                st.markdown("### Algorytm indeksowania trudności i analizy nawirzchni")
+                st.markdown("### 🧭 Jak analizujemy Twoją trasę?")
+
+                st.markdown("**1️⃣ Analiza nawierzchni**")
+                st.markdown("""
+                    Niezależnie od wybranego roweru, zawsze sprawdzamy z czego zbudowana jest trasa - 
+                    każdy odcinek klasyfikujemy jako **utwardzony** (asfalt, beton, kostka), 
+                    **nieutwardzony** (szuter, grunt, piach) lub **nieokreślony** (brak danych w mapie), 
+                    a wynik pokazujemy jako procentowy skład całej trasy.
+                """)
+
+                st.divider()
+
+                st.markdown("**2️⃣ Indeks dopasowania do roweru**")
+                st.markdown("""
+                    Jeśli wybierzesz typ roweru, dodatkowo liczymy **indeks trudności w skali od 0 (idealnie) do 5 (nieprzejezdne)**, 
+                    dopasowany właśnie do niego. System uwzględnia nie tylko nawierzchnię, ale też klasę drogi 
+                    (np. droga główna vs leśna ścieżka) oraz jej jakość:
+                """)
+
                 st.warning("""
-                        Ocena wyliczana jest dynamicznie w skali **0 (Idealnie) do 5 (Nieprzejezdne)** relatywnie dla wybranego typu roweru:
-                        - **Dla Szosy:** Nawierzchnie gruntowe drastycznie podnoszą trudność.
-                        - **Dla MTB:** Asfalt traktowany jest jako nieefektywny (nakłada lekką karę), a piach i leśne ścieżki dają indeks optymalny (0).
-                        - **Dla Gravela:** Szuter i ubitą ziemię system indeksuje jako perfekcyjne środowisko.
-                    """)
+                    - **🚴 Szosowy/miejski:** priorytet dla asfaltu i dróg utwardzonych - nawierzchnie gruntowe drastycznie podnoszą trudność.
+                    - **🌲 Gravel (hybrydowy):** szuter i ubita ziemia to środowisko idealne - asfalt nie jest karany, ale nie jest też premiowany.
+                    - **⛰️ MTB (terenowy):** piach i leśne ścieżki dają indeks optymalny (0), a asfalt traktowany jest jako lekko nieefektywny.
+                """)
+
+                st.caption("💡 Ostateczny indeks to średnia ważona długością odcinków całej trasy.")
 
         m = folium.Map(location=st.session_state.map_center, zoom_start=13)
         folium.GeoJson(data, style_function=lambda x: {'color': '#2ecc71', 'weight': 5}).add_to(m)
