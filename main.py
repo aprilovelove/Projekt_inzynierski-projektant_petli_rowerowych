@@ -97,13 +97,12 @@ st.markdown("""
 # Następnie nakładamy zoptymalizowane style CSS
 st.markdown(f"""
     <style>
-        /* GLOBALNA CZCIONKA LEXEND Z NAJWYŻSZYM PRIORYTETEM */
+        /* GLOBALNA CZCIONKA LEXEND */
         html, body, [data-testid="stAppViewContainer"], [data-testid="stSidebar"],
         .stApp, div, span, p, label, button, input, select, textarea {{
             font-family: 'Lexend', sans-serif !important;
         }}
 
-        /* WYJĄTEK: ikony Streamlita (strzałki, chevrony itp.) NIE mają dostać Lexend */
         [data-testid="stIconMaterial"],
         span[class*="material-icons"],
         span[class*="material-symbols"],
@@ -113,43 +112,28 @@ st.markdown(f"""
             font-family: 'Material Symbols Rounded', 'Material Icons' !important;
         }}
 
-        /* Globalne nadpisanie zmiennych kolorów */
         :root, [data-testid="stAppViewContainer"], [data-testid="stSidebar"] {{
             --primary-color: #EFCC76 !important;
             --primary: #EFCC76 !important;
             --state-selected-background: #2B4121 !important;
         }}
 
-        /* UKRYWANIE ELEMENTÓW SYSTEMOWYCH */
         .stAppDeployButton {{ display:none !important; }}
         #MainMenu {{ visibility: hidden; }}
         footer {{ visibility: hidden; }}
         div[data-testid="stStatusWidget"] {{ visibility: hidden; }}
-        div[data-testid="stToolbar"] {{ display: none !important; }}
-        div[data-testid="stDecoration"] {{ display: none !important; }}
-
-        /* CAŁKOWITE OCZYSZCZENIE GÓRNEGO NAGŁÓWKA */
+        
+        /* WAŻNE: w Streamlit 1.58.0 kontener głównej treści to "stMainBlockContainer",
+   NIE "stAppViewBlockContainer" (stara nazwa z wcześniejszych wersji).
+   Sprawdzone i potwierdzone przez devtools 2026-08. */
+   
+        [data-testid="stMainBlockContainer"] {{
+        padding-top: 0rem !important;
+        }}
+        
         [data-testid="stHeader"] {{
-            background: transparent !important;
-            height: 0px !important;
-            min-height: 0px !important;
-        }}
-
-        [data-testid="stAppViewBlockContainer"] {{
-            padding-top: 0rem !important;
-        }}
-
-        /* Rezerwowe/starsze selektory na wypadek innej wersji Streamlit */
-        .block-container {{
-            padding-top: 1rem !important;
-        }}
-
-        [data-testid="stAppViewContainer"] > .main {{
-            padding-top: 0rem !important;
-        }}
-
-        section.main > div {{
-            padding-top: 0rem !important;
+        background: transparent !important;
+        height: 0rem !important;
         }}
 
         /* STYLIZACJA SIDEBARU */
@@ -200,7 +184,6 @@ st.markdown(f"""
             text-shadow: 1px 1px 3px rgba(0, 0, 0, 0.9);
         }}
 
-        /* STYLIZACJA PRZYCISKÓW */
         div.stButton > button {{
             background-color: #2B4121 !important;        
             color: #ffffff !important;                   
@@ -217,10 +200,6 @@ st.markdown(f"""
             border-color: #ffffff !important;
             box-shadow: 0px 4px 12px rgba(239, 204, 118, 0.3) !important;
         }}
-
-        /* ======================================================= */
-        /* POWIĘKSZONE ZAKŁADKI (st.segmented_control / st.tabs)   */
-        /* ======================================================= */
 
         div[data-testid="stSegmentedControl"],
         div[data-testid="stSegmentedControl"] > div {{
@@ -269,10 +248,6 @@ st.markdown(f"""
             border-radius: 8px 8px 0 0 !important;
         }}
 
-        /* ======================================================= */
-        /* RADIO BUTTONY I OBSŁUGA INPUTÓW                         */
-        /* ======================================================= */
-
         div[data-testid="stRadio"] *:focus,
         div[data-testid="stRadio"] *:focus-visible {{
             outline: none !important;
@@ -304,9 +279,6 @@ st.markdown(f"""
 
     </style>
 """, unsafe_allow_html=True)
-
-
-
 
 # INICJALIZACJA STANU SESJI
 if 'user' not in st.session_state: st.session_state.user = None
