@@ -11,3 +11,4 @@ psycopg2-binary
 python-dotenv
 scikit-learn
 geopy
+starlette<1.0.0
