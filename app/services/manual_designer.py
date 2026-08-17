@@ -97,7 +97,7 @@ def show_manual_designer(bike_type: str = "Brak"):
         if i == 0:
             label = "🏁 Punkt Startowy"
         elif i == len(st.session_state.manual_points) - 1:
-            label = "🏁 Punkt Końcowy (Meta)"
+            label = "🏁 Punkt Końcowy"
         else:
             label = f"📍 Punkt pośredni {i}"
 
