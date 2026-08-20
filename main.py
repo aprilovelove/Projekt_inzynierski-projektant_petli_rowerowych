@@ -506,7 +506,7 @@ with st.sidebar:
                     try:
                         from geopy.geocoders import Nominatim
 
-                        geolocator = Nominatim(user_agent="bike_route_planner_2026")
+                        geolocator = Nominatim(user_agent="bike_route_planner_2026", timeout=5)
                         location = geolocator.geocode(search_query)
                         if location:
                             st.session_state.permanent_lat = location.latitude
