@@ -24,6 +24,15 @@ from app.services.route_analysis_service import analyze_route_compatibility
 from app.services.route_service import clean_line_coordinates, find_circular_route, get_graph
 from app.utils.geo_utils import calculate_square_corners, create_gpx, format_surface_summary
 
+# Ustawienie alternatywnego serwera mirror (kumi.systems)
+ox.settings.overpass_endpoint = "https://overpass.kumi.systems/api/interpreter"
+
+# Włączenie lokalnego buforowania (dane zapisują się na dysku i nie odpytują serwera ponownie)
+ox.settings.use_cache = True
+
+# Ustawienie własnego nagłówka User-Agent
+ox.settings.user_agent = "MojaAplikacjaRowerowa/1.0"
+
 # Automatyczne utworzenie tabeli w NeonDB przy starcie aplikacji
 Base.metadata.create_all(bind=engine)
 
