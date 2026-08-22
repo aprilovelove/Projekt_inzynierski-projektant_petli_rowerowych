@@ -25,7 +25,7 @@ from app.services.route_service import clean_line_coordinates, find_circular_rou
 from app.utils.geo_utils import calculate_square_corners, create_gpx, format_surface_summary
 
 # Ustawienie alternatywnego serwera mirror (kumi.systems)
-ox.settings.overpass_endpoint = "https://overpass.kumi.systems/api/interpreter"
+ox.settings.overpass_url = "https://overpass.kumi.systems/api"
 
 # Włączenie lokalnego buforowania (dane zapisują się na dysku i nie odpytują serwera ponownie)
 ox.settings.use_cache = True
