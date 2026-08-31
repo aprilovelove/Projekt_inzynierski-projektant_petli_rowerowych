@@ -69,6 +69,7 @@ def get_edge_difficulty(edge_data, bike_type):
 
     return score
 
+
 def analyze_route_compatibility(G, route_nodes, bike_type):
     """
     Analizuje trasę pod kątem wybranego roweru (jeśli podano) i zawsze zwraca
