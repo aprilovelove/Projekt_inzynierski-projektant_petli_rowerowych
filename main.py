@@ -59,7 +59,7 @@ secondaryBackgroundColor = "#2B4121"
 textColor = "#FFFFFF"
 """)
 
-# 1. ŚCIEŻKI DO TWOICH OBRAZKÓW
+# 1. ŚCIEŻKI DO TWOICH OBRAZKÓW=
 MAIN_BG_PATH = "app/images/automatyczny.png"
 SIDEBAR_BG_PATH = "app/images/sidebar.png"
 LOGO_PATH = "app/images/logo.png"

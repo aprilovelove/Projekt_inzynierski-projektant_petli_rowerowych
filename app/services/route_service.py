@@ -22,20 +22,34 @@ def dist_heuristic(u, v, G):    #u- wezel startowy ; v - wezel kocowy ; G - graf
 
 # definicja funkcji budującej graf siatki dróg w promieniu dist
 
+OVERPASS_MIRRORS = [
+    "https://overpass-api.de/api",
+    "https://overpass.private.coffee/api",
+    "https://overpass.openstreetmap.fr/api",
+]
+
 def get_graph(lat: float, lon: float, dist: float, network_type: str = "bike"):
     cache_dir = "data/graphs"
-    if not os.path.exists(cache_dir): #deklaracja ścieżi do pamięci podręcznej
+    if not os.path.exists(cache_dir):
         os.makedirs(cache_dir, exist_ok=True)
 
-    file_name = f"graph_{round(lat, 2)}_{round(lon, 2)}.graphml" #zapis pliku
+    file_name = f"graph_{round(lat, 2)}_{round(lon, 2)}.graphml"
     file_path = os.path.join(cache_dir, file_name)
 
-    if os.path.exists(file_path): #czy taki wycinek mapy był już kiedyś pobrany ?
-        return ox.load_graphml(file_path) #jeśli tak to wczytujemy błyskawicznie bez wykonywania zapytań sieciowych
-    else:
-        G = ox.graph_from_point((lat, lon), dist=dist, network_type=network_type, simplify=True)
-        ox.save_graphml(G, file_path)
-        return G
+    if os.path.exists(file_path):
+        return ox.load_graphml(file_path)
+
+    last_error = None
+    for mirror in OVERPASS_MIRRORS:
+        try:
+            ox.settings.overpass_url = mirror
+            G = ox.graph_from_point((lat, lon), dist=dist, network_type=network_type, simplify=True)
+            ox.save_graphml(G, file_path)
+            return G
+        except Exception as e:
+            last_error = e
+            continue
+    raise last_error
 
 
 #funkcja szukająca ścieżi między dwoma punktami
@@ -102,16 +116,18 @@ def clean_line_coordinates(coordinates: List[List[float]]) -> List[List[float]]:
 
 #funkcja usuwająca backtracking
 def remove_backtracking(coordinates: List[List[float]]) -> List[List[float]]:
-    if len(coordinates) < 3: return coordinates
+    if len(coordinates) < 3:
+        return coordinates
     i, result = 0, []
     while i < len(coordinates):
-        result.append(coordinates[i])
         found_backtrack = False
-        # Sprawdzamy czy ścieżka nie wróciła do tego samego punktu w przeciągu 30 węzłów
         for j in range(i + 2, min(i + 30, len(coordinates))):
             if coordinates[i] == coordinates[j]:
-                i, found_backtrack = j, True
+                i = j
+                found_backtrack = True
                 break
-        if not found_backtrack:
-            i += 1
+        if found_backtrack:
+            continue  # nie dopisujemy — ten punkt zostanie dopisany dopiero po "wylądowaniu" na nim
+        result.append(coordinates[i])
+        i += 1
     return result

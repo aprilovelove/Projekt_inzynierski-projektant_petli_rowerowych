@@ -42,23 +42,23 @@ def get_edge_difficulty(edge_data, bike_type):
 
     score = 2.5
 
-    # 1. Analiza nawierzchni (surface)
-    surface = edge_data.get('surface', '')
-    if any(s in ['asphalt', 'concrete', 'paved', 'paving_stones'] for s in
-           ([surface] if isinstance(surface, str) else surface)):
-        score = profile["surface_paved"]
-    elif any(s in ['unpaved', 'gravel', 'ground', 'dirt', 'grass', 'sand'] for s in
-             ([surface] if isinstance(surface, str) else surface)):
-        score = profile["surface_unpaved"]
-
-    # 2. Heurystyka po typie drogi (highway)
+    # 1. Heurystyka po typie drogi (highway) — TYLKO jako baza,
+    #    zostanie nadpisana przez surface poniżej, jeśli ta informacja jest dostępna
     highway = edge_data.get('highway', '')
-    if any(h in ['primary', 'secondary', 'tertiary', 'residential'] for h in
-           ([highway] if isinstance(highway, str) else highway)):
-        # Naprawiony błąd: drogi wysokiej klasy zawsze powinny dążyć do gładkości z profilu
+    highway_list = [highway] if isinstance(highway, str) else highway
+    if any(h in ['primary', 'secondary', 'tertiary', 'residential'] for h in highway_list):
         score = profile["highway_smooth"]
-    if any(h in ['track', 'path'] for h in ([highway] if isinstance(highway, str) else highway)):
+    if any(h in ['track', 'path'] for h in highway_list):
         score = max(score, profile["highway_rough"])
+
+    # 2. Analiza nawierzchni (surface) — NADRZĘDNA względem klasy drogi,
+    #    bo to bezpośrednia, bardziej wiarygodna informacja o stanie drogi
+    surface = edge_data.get('surface', '')
+    surface_list = [surface] if isinstance(surface, str) else surface
+    if any(s in ['asphalt', 'concrete', 'paved', 'paving_stones'] for s in surface_list):
+        score = profile["surface_paved"]
+    elif any(s in ['unpaved', 'gravel', 'ground', 'dirt', 'grass', 'sand'] for s in surface_list):
+        score = profile["surface_unpaved"]
 
     # 3. Doprecyzowanie klasy drogi leśnej (tracktype)
     ttype = edge_data.get('tracktype', '')
@@ -68,7 +68,6 @@ def get_edge_difficulty(edge_data, bike_type):
         score = profile["track_bad"]
 
     return score
-
 
 def analyze_route_compatibility(G, route_nodes, bike_type):
     """

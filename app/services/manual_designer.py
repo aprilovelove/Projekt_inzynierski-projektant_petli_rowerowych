@@ -149,7 +149,20 @@ def show_manual_designer(bike_type: str = "Brak"):
                     )
                     graph_radius_m = max_dist_deg * 111_000 * 1.3 + 1000        #pobieranie fragmentu grafu adekwatnego do trasy żeby było szybciej
 
-                    G_manual = ox.graph_from_point((center_lat, center_lon), dist=graph_radius_m, network_type="bike")
+                    last_error = None
+                    G_manual = None
+                    for mirror in ["https://overpass-api.de/api", "https://overpass.private.coffee/api",
+                                   "https://overpass.openstreetmap.fr/api"]:
+                        try:
+                            ox.settings.overpass_url = mirror
+                            G_manual = ox.graph_from_point((center_lat, center_lon), dist=graph_radius_m,
+                                                           network_type="bike")
+                            break
+                        except Exception as e:
+                            last_error = e
+                            continue
+                    if G_manual is None:
+                        raise last_error
                     nodes_df, _ = ox.graph_to_gdfs(G_manual)
 
                     def heuristic(u, v):
