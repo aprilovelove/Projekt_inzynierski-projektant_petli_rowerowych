@@ -38,7 +38,7 @@ def alternative_geocode(query: str):
                 feat = data["features"][0]
                 lon, lat = feat["geometry"]["coordinates"]
                 name = feat["properties"].get("name", query)
-                city = feat["properties"].get("city", "Śląsk")
+                city = feat["properties"].get("city")
                 street = feat["properties"].get("street", "")
                 full_name = f"{name}, {street} ({city})" if street else f"{name} ({city})"
                 return lat, lon, full_name
